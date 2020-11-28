@@ -406,6 +406,7 @@ typedef struct {
 
 typedef struct {
     UINT16              conn_id;
+    UINT8               link_role;
     tBTA_GATTC_IF       client_if;
     BD_ADDR             remote_bda;
     tBTA_GATT_CONN_PARAMS conn_params;
@@ -567,7 +568,7 @@ typedef struct {
     BD_ADDR             remote_bda;
     UINT32              trans_id;
     UINT16              conn_id;
-    UINT16              handle;                
+    UINT16              handle;
     tBTA_GATTS_REQ_DATA *p_data;
     UINT16  data_len;
     UINT8   *value;
@@ -614,6 +615,7 @@ typedef struct {
     tBTA_GATTS_IF       server_if;
     BD_ADDR             remote_bda;
     UINT16              conn_id;
+    UINT8               link_role;
     tBTA_GATT_REASON    reason; /* report disconnect reason */
     tBTA_GATT_TRANSPORT transport;
     tBTA_GATT_CONN_PARAMS conn_params;
@@ -1254,7 +1256,7 @@ extern void BTA_GATTS_AppDeregister(tBTA_GATTS_IF server_if);
 ** Function         BTA_GATTS_CreateService
 **
 ** Description      Create a service. When service creation is done, a callback
-**                  event BTA_GATTS_CREATE_SRVC_EVT is called to report status
+**                  event BTA_GATTS_CREATE_EVT is called to report status
 **                  and service ID to the profile. The service ID obtained in
 **                  the callback function needs to be used when adding included
 **                  service and characteristics/descriptors into the service.

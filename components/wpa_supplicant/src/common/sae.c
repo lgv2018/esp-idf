@@ -27,14 +27,6 @@ void wpabuf_clear_free(struct wpabuf *buf)
     }
 }
 
-void bin_clear_free(void *bin, size_t len)
-{
-    if (bin) {
-        os_memset(bin, 0, len);
-        os_free(bin);
-    }
-}
-
 int sae_set_group(struct sae_data *sae, int group)
 {
 	struct sae_temporary_data *tmp;
@@ -110,7 +102,6 @@ void sae_clear_temp_data(struct sae_data *sae)
 	crypto_ec_point_deinit(tmp->pwe_ecc, 1);
 	crypto_ec_point_deinit(tmp->own_commit_element_ecc, 0);
 	crypto_ec_point_deinit(tmp->peer_commit_element_ecc, 0);
-	wpabuf_free(tmp->anti_clogging_token);
 	os_free(tmp->pw_id);
 	bin_clear_free(tmp, sizeof(*tmp));
 	sae->tmp = NULL;

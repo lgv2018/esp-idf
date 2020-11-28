@@ -121,6 +121,7 @@ extern "C" {
 #define ESP_ROM_SPIFLASH_BP2                  BIT4
 #define ESP_ROM_SPIFLASH_WR_PROTECT           (ESP_ROM_SPIFLASH_BP0|ESP_ROM_SPIFLASH_BP1|ESP_ROM_SPIFLASH_BP2)
 #define ESP_ROM_SPIFLASH_QE                   BIT9
+#define ESP_ROM_SPIFLASH_BP_MASK_ISSI         (BIT7 | BIT5 | BIT4 | BIT3 | BIT2)
 
 //Extra dummy for flash read
 #define ESP_ROM_SPIFLASH_DUMMY_LEN_PLUS_20M   0
@@ -541,6 +542,13 @@ esp_rom_spiflash_result_t esp_rom_spiflash_wait_idle(esp_rom_spiflash_chip_t *sp
  *   Both HD & WP pins are configured via GPIO matrix to map to the selected peripheral.
  */
 void esp_rom_spiflash_select_qio_pins(uint8_t wp_gpio_num, uint32_t spiconfig);
+
+/**
+ * @brief Clear WEL bit unconditionally.
+ *
+ * @return always ESP_ROM_SPIFLASH_RESULT_OK
+ */
+esp_rom_spiflash_result_t esp_rom_spiflash_write_disable(void);
 
 /** @brief Global esp_rom_spiflash_chip_t structure used by ROM functions
  *

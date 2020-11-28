@@ -5,9 +5,8 @@
 COMPONENT_ADD_INCLUDEDIRS := include
 COMPONENT_SRCDIRS := src
 
-# IPC framework is not applicable if freertos unicore config is selected
-ifdef CONFIG_FREERTOS_UNICORE
-COMPONENT_OBJEXCLUDE := src/ipc.o
+ifndef CONFIG_IDF_ENV_FPGA
+COMPONENT_OBJEXCLUDE += src/fpga_overrides.o
 endif
 
 # disable stack protection in files which are involved in initialization of that feature

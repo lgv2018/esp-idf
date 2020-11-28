@@ -66,7 +66,7 @@ enum {
     BTA_GATTC_API_LISTEN_EVT,
     BTA_GATTC_API_BROADCAST_EVT,
     BTA_GATTC_API_DISABLE_EVT,
-    BTA_GATTC_ENC_CMPL_EVT,  
+    BTA_GATTC_ENC_CMPL_EVT,
     BTA_GATTC_API_CACHE_ASSOC_EVT,
     BTA_GATTC_API_CACHE_GET_ADDR_LIST_EVT,
 };
@@ -75,7 +75,7 @@ typedef UINT16 tBTA_GATTC_INT_EVT;
 #define BTA_GATTC_SERVICE_CHANGED_LEN    4
 
 typedef enum {
-    BTA_GATTC_SERVICE_INFO_FROM_REMOTE_DEVICE         = 0, 
+    BTA_GATTC_SERVICE_INFO_FROM_REMOTE_DEVICE         = 0,
     BTA_GATTC_SERVICE_INFO_FROM_NVS_FLASH             = 1,
     BTA_GATTC_SERVICE_INFO_FROM_UNKNOWN               = 2,
 } tBTA_SERVICE_SOURCE_t;
@@ -468,7 +468,7 @@ extern void bta_gattc_init_bk_conn(tBTA_GATTC_API_OPEN *p_data, tBTA_GATTC_RCB *
 extern void bta_gattc_cancel_bk_conn(tBTA_GATTC_API_CANCEL_OPEN *p_data);
 extern void bta_gattc_send_open_cback( tBTA_GATTC_RCB *p_clreg, tBTA_GATT_STATUS status,
                                        BD_ADDR remote_bda, UINT16 conn_id, tBTA_TRANSPORT transport,  UINT16 mtu);
-extern void bta_gattc_send_connect_cback( tBTA_GATTC_RCB *p_clreg, BD_ADDR remote_bda, UINT16 conn_id, tBTA_GATT_CONN_PARAMS conn_params);
+extern void bta_gattc_send_connect_cback( tBTA_GATTC_RCB *p_clreg, BD_ADDR remote_bda, UINT16 conn_id, tBTA_GATT_CONN_PARAMS conn_params, UINT8 link_role);
 extern void bta_gattc_send_disconnect_cback( tBTA_GATTC_RCB *p_clreg, tGATT_DISCONN_REASON reason,
                                 BD_ADDR remote_bda, UINT16 conn_id);
 extern void bta_gattc_process_api_refresh(tBTA_GATTC_CB *p_cb, tBTA_GATTC_DATA *p_msg);

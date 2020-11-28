@@ -26,6 +26,7 @@
 #include "esp_wpas_glue.h"
 #include "esp_hostap.h"
 
+#include "esp_system.h"
 #include "crypto/crypto.h"
 #include "crypto/sha1.h"
 #include "crypto/aes_wrap.h"
@@ -33,6 +34,7 @@
 #include "esp_wifi_driver.h"
 #include "esp_private/wifi.h"
 #include "esp_wpa3_i.h"
+#include "esp_wpa2.h"
 
 void  wpa_install_key(enum wpa_alg alg, u8 *addr, int key_idx, int set_tx,
                       u8 *seq, size_t seq_len, u8 *key, size_t key_len, int key_entry_valid)
@@ -110,10 +112,10 @@ void  wpa_neg_complete(void)
 
 bool  wpa_attach(void)
 {
-    bool ret = true; 
+    bool ret = true;
     ret = wpa_sm_init(NULL, wpa_sendto_wrapper,
                  wpa_config_assoc_ie, wpa_install_key, wpa_get_key, wpa_deauthenticate, wpa_neg_complete);
-    if(ret) {   
+    if(ret) {
         ret = (esp_wifi_register_tx_cb_internal(eapol_txcb, WIFI_TXCB_EAPOL_ID) == ESP_OK);
     }
     return ret;
@@ -147,6 +149,7 @@ bool  wpa_ap_rx_eapol(void *hapd_data, void *sm_data, u8 *data, size_t data_len)
 
 bool  wpa_deattach(void)
 {
+    esp_wifi_sta_wpa2_ent_disable();
     wpa_sm_deinit();
     return true;
 }
@@ -176,6 +179,27 @@ int wpa_parse_wpa_ie_wrapper(const u8 *wpa_ie, size_t wpa_ie_len, wifi_wpa_ie_t 
     return ret;
 }
 
+static void wpa_sta_disconnected_cb(uint8_t reason_code)
+{
+    switch (reason_code) {
+        case WIFI_REASON_UNSPECIFIED:
+        case WIFI_REASON_AUTH_EXPIRE:
+        case WIFI_REASON_NOT_AUTHED:
+        case WIFI_REASON_NOT_ASSOCED:
+        case WIFI_REASON_4WAY_HANDSHAKE_TIMEOUT:
+        case WIFI_REASON_INVALID_PMKID:
+        case WIFI_REASON_AUTH_FAIL:
+        case WIFI_REASON_ASSOC_FAIL:
+        case WIFI_REASON_CONNECTION_FAIL:
+        case WIFI_REASON_HANDSHAKE_TIMEOUT:
+            esp_wpa3_free_sae_data();
+            wpa_sta_clear_curr_pmksa();
+            break;
+        default:
+            break;
+    }
+}
+
 int esp_supplicant_init(void)
 {
     struct wpa_funcs *wpa_cb;
@@ -189,6 +213,7 @@ int esp_supplicant_init(void)
     wpa_cb->wpa_sta_deinit     = wpa_deattach;
     wpa_cb->wpa_sta_rx_eapol   = wpa_sm_rx_eapol;
     wpa_cb->wpa_sta_connect    = wpa_sta_connect;
+    wpa_cb->wpa_sta_disconnected_cb = wpa_sta_disconnected_cb;
     wpa_cb->wpa_sta_in_4way_handshake = wpa_sta_in_4way_handshake;
 
     wpa_cb->wpa_ap_join       = wpa_ap_join;

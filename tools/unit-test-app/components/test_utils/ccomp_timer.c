@@ -21,15 +21,7 @@
 #include "freertos/semphr.h"
 
 #include "esp_log.h"
-#include "esp_ipc.h"
 #include "esp_intr_alloc.h"
-
-#if CONFIG_IDF_TARGET_ESP32
-#include "esp32/clk.h"
-#elif CONFIG_IDF_TARGET_ESP32S2
-#include "esp32s2/clk.h"
-#endif
-
 
 static const char TAG[] = "ccomp_timer";
 

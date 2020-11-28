@@ -116,7 +116,7 @@ static void esp_spp_cb(esp_spp_cb_event_t event, esp_spp_cb_param_t *param)
         break;
     case ESP_SPP_OPEN_EVT:
         ESP_LOGI(SPP_TAG, "ESP_SPP_OPEN_EVT");
-        esp_spp_write(param->srv_open.handle, SPP_DATA_LEN, spp_data);
+        esp_spp_write(param->open.handle, SPP_DATA_LEN, spp_data);
         gettimeofday(&time_old, NULL);
         break;
     case ESP_SPP_CLOSE_EVT:
@@ -156,6 +156,9 @@ static void esp_spp_cb(esp_spp_cb_event_t event, esp_spp_cb_param_t *param)
         break;
     case ESP_SPP_SRV_OPEN_EVT:
         ESP_LOGI(SPP_TAG, "ESP_SPP_SRV_OPEN_EVT");
+        break;
+    case ESP_SPP_UNINIT_EVT:
+        ESP_LOGI(SPP_TAG, "ESP_SPP_UNINIT_EVT");
         break;
     default:
         break;
@@ -230,6 +233,10 @@ static void esp_bt_gap_cb(esp_bt_gap_cb_event_t event, esp_bt_gap_cb_param_t *pa
         break;
 #endif
 
+    case ESP_BT_GAP_MODE_CHG_EVT:
+        ESP_LOGI(SPP_TAG, "ESP_BT_GAP_MODE_CHG_EVT mode:%d", param->mode_chg.mode);
+        break;
+
     default:
         break;
     }
@@ -301,4 +308,3 @@ void app_main(void)
     esp_bt_pin_code_t pin_code;
     esp_bt_gap_set_pin(pin_type, 0, pin_code);
 }
-

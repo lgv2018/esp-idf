@@ -167,6 +167,14 @@ extern "C" {
 #define EFUSE_RD_DIS_V  0x7F
 #define EFUSE_RD_DIS_S  0
 
+#define EFUSE_RD_DIS_KEY0 (1<<0)
+#define EFUSE_RD_DIS_KEY1 (1<<1)
+#define EFUSE_RD_DIS_KEY2 (1<<2)
+#define EFUSE_RD_DIS_KEY3 (1<<3)
+#define EFUSE_RD_DIS_KEY4 (1<<4)
+#define EFUSE_RD_DIS_KEY5 (1<<5)
+#define EFUSE_RD_DIS_SYS_DATA_PART2 (1<<6)
+
 #define EFUSE_PGM_DATA2_REG          (DR_REG_EFUSE_BASE + 0x008)
 /* EFUSE_KEY_PURPOSE_1 : R/W ;bitpos:[31:28] ;default: 4'h0 ; */
 /*description: Purpose of Key1. Refer to Table KEY_PURPOSE Values.*/
@@ -465,6 +473,36 @@ extern "C" {
 #define EFUSE_WR_DIS_M  ((EFUSE_WR_DIS_V)<<(EFUSE_WR_DIS_S))
 #define EFUSE_WR_DIS_V  0xFFFFFFFF
 #define EFUSE_WR_DIS_S  0
+
+#define EFUSE_WR_DIS_RD_DIS                        (1<<0)
+#define EFUSE_WR_DIS_DIS_RTC_RAM_BOOT              (1<<1)
+#define EFUSE_WR_DIS_GROUP_1                       (1<<2)
+#define EFUSE_WR_DIS_GROUP_2                       (1<<3)
+#define EFUSE_WR_DIS_SPI_BOOT_CRYPT_CNT            (1<<4)
+#define EFUSE_WR_DIS_SECURE_BOOT_KEY_REVOKE0       (1<<5)
+#define EFUSE_WR_DIS_SECURE_BOOT_KEY_REVOKE1       (1<<6)
+#define EFUSE_WR_DIS_SECURE_BOOT_KEY_REVOKE2       (1<<7)
+#define EFUSE_WR_DIS_KEY0_PURPOSE                  (1<<8)
+#define EFUSE_WR_DIS_KEY1_PURPOSE                  (1<<9)
+#define EFUSE_WR_DIS_KEY2_PURPOSE                  (1<<10)
+#define EFUSE_WR_DIS_KEY3_PURPOSE                  (1<<11)
+#define EFUSE_WR_DIS_KEY4_PURPOSE                  (1<<12)
+#define EFUSE_WR_DIS_KEY5_PURPOSE                  (1<<13)
+#define EFUSE_WR_DIS_SECURE_BOOT_EN                (1<<15)
+#define EFUSE_WR_DIS_SECURE_BOOT_AGGRESSIVE_REVOKE (1<<16)
+#define EFUSE_WR_DIS_GROUP_3                       (1<<18)
+#define EFUSE_WR_DIS_BLK1                          (1<<20)
+#define EFUSE_WR_DIS_SYS_DATA_PART1                (1<<21)
+#define EFUSE_WR_DIS_USER_DATA                     (1<<22)
+#define EFUSE_WR_DIS_KEY0                          (1<<23)
+#define EFUSE_WR_DIS_KEY1                          (1<<24)
+#define EFUSE_WR_DIS_KEY2                          (1<<25)
+#define EFUSE_WR_DIS_KEY3                          (1<<26)
+#define EFUSE_WR_DIS_KEY4                          (1<<27)
+#define EFUSE_WR_DIS_KEY5                          (1<<28)
+#define EFUSE_WR_DIS_SYS_DATA_PART2                (1<<29)
+#define EFUSE_WR_DIS_USB_EXCHG_PINS                (1<<30)
+
 
 #define EFUSE_RD_REPEAT_DATA0_REG          (DR_REG_EFUSE_BASE + 0x030)
 /* EFUSE_VDD_SPI_DREFH : RO ;bitpos:[31:30] ;default: 2'h0 ; */
@@ -879,12 +917,24 @@ extern "C" {
 #define EFUSE_SPI_PAD_CONF_1_S  0
 
 #define EFUSE_RD_MAC_SPI_SYS_3_REG          (DR_REG_EFUSE_BASE + 0x050)
-/* EFUSE_SYS_DATA_PART0_0 : RO ;bitpos:[31:18] ;default: 14'h0 ; */
-/*description: Stores the fist 14 bits of the zeroth part of system data.*/
-#define EFUSE_SYS_DATA_PART0_0  0x00003FFF
+/* EFUSE_SYS_DATA_PART0_0 : RO ;bitpos:[31:25] ;default: 7'h0 ; */
+/*description: Stores the fist 7 bits of the zeroth part of system data.*/
+#define EFUSE_SYS_DATA_PART0_0  0x0000007F
 #define EFUSE_SYS_DATA_PART0_0_M  ((EFUSE_SYS_DATA_PART0_0_V)<<(EFUSE_SYS_DATA_PART0_0_S))
-#define EFUSE_SYS_DATA_PART0_0_V  0x3FFF
-#define EFUSE_SYS_DATA_PART0_0_S  18
+#define EFUSE_SYS_DATA_PART0_0_V  0x7F
+#define EFUSE_SYS_DATA_PART0_0_S  25
+/* EFUSE_PKG_VERSION : RO ;bitpos:[24:21] ;default: 4'h0 ; */
+/*description: Package version 0:ESP32-S2, 1:ESP32-S2FH16, 2:ESP32-S2FH32 */
+#define EFUSE_PKG_VERSION  0x0000000F
+#define EFUSE_PKG_VERSION_M  ((EFUSE_PKG_VERSION_V)<<(EFUSE_PKG_VERSION_S))
+#define EFUSE_PKG_VERSION_V  0xF
+#define EFUSE_PKG_VERSION_S  21
+/* EFUSE_WAFER_VERSION : RO ;bitpos:[20:18] ;default: 3'h0 ; */
+/*description: WAFER version 0:A */
+#define EFUSE_WAFER_VERSION  0x00000007
+#define EFUSE_WAFER_VERSION_M  ((EFUSE_WAFER_VERSION_V)<<(EFUSE_WAFER_VERSION_S))
+#define EFUSE_WAFER_VERSION_V  0x7
+#define EFUSE_WAFER_VERSION_S  18
 /* EFUSE_SPI_PAD_CONF_2 : RO ;bitpos:[17:0] ;default: 18'h0 ; */
 /*description: Stores the second part of SPI_PAD_CONF.*/
 #define EFUSE_SPI_PAD_CONF_2  0x0003FFFF
@@ -2260,5 +2310,3 @@ extern "C" {
 
 
 #endif /*_SOC_EFUSE_REG_H_ */
-
-

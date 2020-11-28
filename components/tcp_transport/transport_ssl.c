@@ -25,6 +25,7 @@
 #include "esp_transport_ssl.h"
 #include "esp_transport_utils.h"
 #include "esp_transport_ssl_internal.h"
+#include "esp_transport_internal.h"
 
 static const char *TAG = "TRANS_SSL";
 
@@ -74,7 +75,7 @@ static int ssl_connect(esp_transport_handle_t t, const char *host, int port, int
     if (esp_tls_conn_new_sync(host, strlen(host), port, &ssl->cfg, ssl->tls) <= 0) {
         ESP_LOGE(TAG, "Failed to open a new connection");
         esp_transport_set_errors(t, ssl->tls->error_handle);
-        esp_tls_conn_delete(ssl->tls);
+        esp_tls_conn_destroy(ssl->tls);
         ssl->tls = NULL;
         return -1;
     }
@@ -86,6 +87,7 @@ static int ssl_poll_read(esp_transport_handle_t t, int timeout_ms)
 {
     transport_ssl_t *ssl = esp_transport_get_context_data(t);
     int ret = -1;
+    int remain = 0;
     struct timeval timeout;
     fd_set readset;
     fd_set errset;
@@ -94,11 +96,16 @@ static int ssl_poll_read(esp_transport_handle_t t, int timeout_ms)
     FD_SET(ssl->tls->sockfd, &readset);
     FD_SET(ssl->tls->sockfd, &errset);
 
+    if ((remain = esp_tls_get_bytes_avail(ssl->tls)) > 0) {
+        ESP_LOGD(TAG, "remain data in cache, need to read again");
+        return remain;
+    }
     ret = select(ssl->tls->sockfd + 1, &readset, NULL, &errset, esp_transport_utils_ms_to_timeval(timeout_ms, &timeout));
     if (ret > 0 && FD_ISSET(ssl->tls->sockfd, &errset)) {
         int sock_errno = 0;
         uint32_t optlen = sizeof(sock_errno);
         getsockopt(ssl->tls->sockfd, SOL_SOCKET, SO_ERROR, &sock_errno, &optlen);
+        esp_transport_capture_errno(t, sock_errno);
         ESP_LOGE(TAG, "ssl_poll_read select error %d, errno = %s, fd = %d", sock_errno, strerror(sock_errno), ssl->tls->sockfd);
         ret = -1;
     }
@@ -121,6 +128,7 @@ static int ssl_poll_write(esp_transport_handle_t t, int timeout_ms)
         int sock_errno = 0;
         uint32_t optlen = sizeof(sock_errno);
         getsockopt(ssl->tls->sockfd, SOL_SOCKET, SO_ERROR, &sock_errno, &optlen);
+        esp_transport_capture_errno(t, sock_errno);
         ESP_LOGE(TAG, "ssl_poll_write select error %d, errno = %s, fd = %d", sock_errno, strerror(sock_errno), ssl->tls->sockfd);
         ret = -1;
     }
@@ -149,10 +157,8 @@ static int ssl_read(esp_transport_handle_t t, char *buffer, int len, int timeout
     int poll, ret;
     transport_ssl_t *ssl = esp_transport_get_context_data(t);
 
-    if (esp_tls_get_bytes_avail(ssl->tls) <= 0) {
-        if ((poll = esp_transport_poll_read(t, timeout_ms)) <= 0) {
-            return poll;
-        }
+    if ((poll = esp_transport_poll_read(t, timeout_ms)) <= 0) {
+        return poll;
     }
     ret = esp_tls_conn_read(ssl->tls, (unsigned char *)buffer, len);
     if (ret < 0) {
@@ -170,7 +176,8 @@ static int ssl_close(esp_transport_handle_t t)
     int ret = -1;
     transport_ssl_t *ssl = esp_transport_get_context_data(t);
     if (ssl->ssl_initialized) {
-        esp_tls_conn_delete(ssl->tls);
+        ret = esp_tls_conn_destroy(ssl->tls);
+        ssl->conn_state = TRANS_SSL_INIT;
         ssl->ssl_initialized = false;
     }
     return ret;
@@ -279,6 +286,33 @@ void esp_transport_ssl_skip_common_name_check(esp_transport_handle_t t)
     }
 }
 
+void esp_transport_ssl_use_secure_element(esp_transport_handle_t t)
+{
+    transport_ssl_t *ssl = esp_transport_get_context_data(t);
+    if (t && ssl) {
+        ssl->cfg.use_secure_element = true;
+    }
+}
+
+static int ssl_get_socket(esp_transport_handle_t t)
+{
+    if (t) {
+        transport_ssl_t *ssl = t->data;
+        if (ssl && ssl->tls) {
+            return ssl->tls->sockfd;
+        }
+    }
+    return -1;
+}
+
+void esp_transport_ssl_set_ds_data(esp_transport_handle_t t, void *ds_data)
+{
+    transport_ssl_t *ssl = esp_transport_get_context_data(t);
+    if (t && ssl) {
+        ssl->cfg.ds_data = ds_data;
+    }
+}
+
 esp_transport_handle_t esp_transport_ssl_init(void)
 {
     esp_transport_handle_t t = esp_transport_init();
@@ -287,6 +321,6 @@ esp_transport_handle_t esp_transport_ssl_init(void)
     esp_transport_set_context_data(t, ssl);
     esp_transport_set_func(t, ssl_connect, ssl_read, ssl_write, ssl_close, ssl_poll_read, ssl_poll_write, ssl_destroy);
     esp_transport_set_async_connect_func(t, ssl_connect_async);
+    t->_get_socket = ssl_get_socket;
     return t;
 }
-

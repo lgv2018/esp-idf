@@ -5,11 +5,12 @@
 #include "esp_log.h"
 #include "esp_attr.h"
 #include "ccomp_timer.h"
-#include "eri.h"
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#ifndef CONFIG_FREERTOS_UNICORE
 #include "esp_ipc.h"
+#endif
 
 #include "unity.h"
 

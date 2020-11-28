@@ -190,12 +190,6 @@ extern "C" {
 
 #define DPORT_PERIP_CLK_EN_REG DPORT_PERIP_CLK_EN0_REG
 #define DPORT_PERIP_CLK_EN0_REG          (DR_REG_SYSTEM_BASE + 0x040)
-/* DPORT_SPI4_CLK_EN : R/W ;bitpos:[31] ;default: 1'h1 ; */
-/*description: */
-#define DPORT_SPI4_CLK_EN  (BIT(31))
-#define DPORT_SPI4_CLK_EN_M  (BIT(31))
-#define DPORT_SPI4_CLK_EN_V  0x1
-#define DPORT_SPI4_CLK_EN_S  31
 /* DPORT_ADC2_ARB_CLK_EN : R/W ;bitpos:[30] ;default: 1'b1 ; */
 /*description: */
 #define DPORT_ADC2_ARB_CLK_EN  (BIT(30))
@@ -262,12 +256,12 @@ extern "C" {
 #define DPORT_PWM1_CLK_EN_M  (BIT(20))
 #define DPORT_PWM1_CLK_EN_V  0x1
 #define DPORT_PWM1_CLK_EN_S  20
-/* DPORT_CAN_CLK_EN : R/W ;bitpos:[19] ;default: 1'b0 ; */
+/* DPORT_TWAI_CLK_EN : R/W ;bitpos:[19] ;default: 1'b0 ; */
 /*description: */
-#define DPORT_CAN_CLK_EN  (BIT(19))
-#define DPORT_CAN_CLK_EN_M  (BIT(19))
-#define DPORT_CAN_CLK_EN_V  0x1
-#define DPORT_CAN_CLK_EN_S  19
+#define DPORT_TWAI_CLK_EN  (BIT(19))
+#define DPORT_TWAI_CLK_EN_M  (BIT(19))
+#define DPORT_TWAI_CLK_EN_V  0x1
+#define DPORT_TWAI_CLK_EN_S  19
 /* DPORT_I2C_EXT1_CLK_EN : R/W ;bitpos:[18] ;default: 1'b0 ; */
 /*description: */
 #define DPORT_I2C_EXT1_CLK_EN  (BIT(18))
@@ -424,12 +418,6 @@ extern "C" {
 
 #define DPORT_PERIP_RST_EN_REG DPORT_PERIP_RST_EN0_REG
 #define DPORT_PERIP_RST_EN0_REG          (DR_REG_SYSTEM_BASE + 0x048)
-/* DPORT_SPI4_RST : R/W ;bitpos:[31] ;default: 1'h0 ; */
-/*description: */
-#define DPORT_SPI4_RST  (BIT(31))
-#define DPORT_SPI4_RST_M  (BIT(31))
-#define DPORT_SPI4_RST_V  0x1
-#define DPORT_SPI4_RST_S  31
 /* DPORT_ADC2_ARB_RST : R/W ;bitpos:[30] ;default: 1'b0 ; */
 /*description: */
 #define DPORT_ADC2_ARB_RST  (BIT(30))
@@ -496,12 +484,12 @@ extern "C" {
 #define DPORT_PWM1_RST_M  (BIT(20))
 #define DPORT_PWM1_RST_V  0x1
 #define DPORT_PWM1_RST_S  20
-/* DPORT_CAN_RST : R/W ;bitpos:[19] ;default: 1'b0 ; */
+/* DPORT_TWAI_RST : R/W ;bitpos:[19] ;default: 1'b0 ; */
 /*description: */
-#define DPORT_CAN_RST  (BIT(19))
-#define DPORT_CAN_RST_M  (BIT(19))
-#define DPORT_CAN_RST_V  0x1
-#define DPORT_CAN_RST_S  19
+#define DPORT_TWAI_RST  (BIT(19))
+#define DPORT_TWAI_RST_M  (BIT(19))
+#define DPORT_TWAI_RST_V  0x1
+#define DPORT_TWAI_RST_S  19
 /* DPORT_I2C_EXT1_RST : R/W ;bitpos:[18] ;default: 1'b0 ; */
 /*description: */
 #define DPORT_I2C_EXT1_RST  (BIT(18))
@@ -898,6 +886,10 @@ extern "C" {
 #define DPORT_SOC_CLK_SEL_M  ((DPORT_SOC_CLK_SEL_V)<<(DPORT_SOC_CLK_SEL_S))
 #define DPORT_SOC_CLK_SEL_V  0x3
 #define DPORT_SOC_CLK_SEL_S  10
+#define DPORT_SOC_CLK_SEL_XTL    0
+#define DPORT_SOC_CLK_SEL_PLL    1
+#define DPORT_SOC_CLK_SEL_8M     2
+#define DPORT_SOC_CLK_SEL_APLL   3
 /* DPORT_PRE_DIV_CNT : R/W ;bitpos:[9:0] ;default: 10'h1 ; */
 /*description: */
 #define DPORT_PRE_DIV_CNT  0x000003FF
@@ -920,5 +912,3 @@ extern "C" {
 
 
 #endif /*_SOC_SYSTEM_REG_H_ */
-
-

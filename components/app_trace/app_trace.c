@@ -161,11 +161,14 @@
 #if CONFIG_IDF_TARGET_ESP32S2
 #include "soc/sensitive_reg.h"
 #endif
+#if __XTENSA__
 #include "eri.h"
 #include "trax.h"
+#endif
 #include "soc/timer_periph.h"
 #include "freertos/FreeRTOS.h"
 #include "esp_app_trace.h"
+#include "esp_rom_sys.h"
 
 #if CONFIG_APPTRACE_ENABLE
 #define ESP_APPTRACE_MAX_VPRINTF_ARGS           256
@@ -180,13 +183,13 @@ const static char *TAG = "esp_apptrace";
 #define ESP_APPTRACE_LOG( format, ... )   \
     do { \
         esp_apptrace_log_lock(); \
-        ets_printf(format, ##__VA_ARGS__); \
+        esp_rom_printf(format, ##__VA_ARGS__); \
         esp_apptrace_log_unlock(); \
     } while(0)
 #else
 #define ESP_APPTRACE_LOG( format, ... )   \
     do { \
-        ets_printf(format, ##__VA_ARGS__); \
+        esp_rom_printf(format, ##__VA_ARGS__); \
     } while(0)
 #endif
 
@@ -494,7 +497,7 @@ static uint16_t esp_apptrace_trax_pend_chunk_sz_get(void)
 #endif
 
 // assumed to be protected by caller from multi-core/thread access
-static esp_err_t esp_apptrace_trax_block_switch(void)
+static __attribute__((noinline)) esp_err_t esp_apptrace_trax_block_switch(void)
 {
     int prev_block_num = s_trace_buf.trax.state.in_block % 2;
     int new_block_num = prev_block_num ? (0) : (1);

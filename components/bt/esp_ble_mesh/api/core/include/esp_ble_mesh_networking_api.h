@@ -17,9 +17,13 @@
 
 #include "esp_ble_mesh_defs.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /** @brief: event, event code of user-defined model events; param, parameters of user-defined model events */
 typedef void (* esp_ble_mesh_model_cb_t)(esp_ble_mesh_model_cb_event_t event,
-        esp_ble_mesh_model_cb_param_t *param);
+                                         esp_ble_mesh_model_cb_param_t *param);
 
 /**
  * @brief         Register BLE Mesh callback for user-defined models' operations.
@@ -76,6 +80,18 @@ esp_err_t esp_ble_mesh_model_msg_opcode_init(uint8_t *data, uint32_t opcode);
 esp_err_t esp_ble_mesh_client_model_init(esp_ble_mesh_model_t *model);
 
 /**
+ * @brief         De-initialize the user-defined client model.
+ *
+ * @note          This function shall be invoked before esp_ble_mesh_deinit() is called.
+ *
+ * @param[in]     model: Pointer of the Client model.
+ *
+ * @return        ESP_OK on success or error code otherwise.
+ *
+ */
+esp_err_t esp_ble_mesh_client_model_deinit(esp_ble_mesh_model_t *model);
+
+/**
  * @brief         Send server model messages(such as server model status messages).
  *
  * @param[in]     model: BLE Mesh Server Model to which the message belongs.
@@ -88,8 +104,9 @@ esp_err_t esp_ble_mesh_client_model_init(esp_ble_mesh_model_t *model);
  *
  */
 esp_err_t esp_ble_mesh_server_model_send_msg(esp_ble_mesh_model_t *model,
-        esp_ble_mesh_msg_ctx_t *ctx, uint32_t opcode,
-        uint16_t length, uint8_t *data);
+                                             esp_ble_mesh_msg_ctx_t *ctx,
+                                             uint32_t opcode,
+                                             uint16_t length, uint8_t *data);
 
 /**
  * @brief         Send client model message (such as model get, set, etc).
@@ -107,9 +124,11 @@ esp_err_t esp_ble_mesh_server_model_send_msg(esp_ble_mesh_model_t *model,
  *
  */
 esp_err_t esp_ble_mesh_client_model_send_msg(esp_ble_mesh_model_t *model,
-        esp_ble_mesh_msg_ctx_t *ctx, uint32_t opcode,
-        uint16_t length, uint8_t *data, int32_t msg_timeout,
-        bool need_rsp, esp_ble_mesh_dev_role_t device_role);
+                                             esp_ble_mesh_msg_ctx_t *ctx,
+                                             uint32_t opcode,
+                                             uint16_t length, uint8_t *data,
+                                             int32_t msg_timeout, bool need_rsp,
+                                             esp_ble_mesh_dev_role_t device_role);
 
 /**
  * @brief         Send a model publication message.
@@ -150,8 +169,8 @@ esp_err_t esp_ble_mesh_model_publish(esp_ble_mesh_model_t *model, uint32_t opcod
  *
  */
 esp_err_t esp_ble_mesh_server_model_update_state(esp_ble_mesh_model_t *model,
-        esp_ble_mesh_server_state_type_t type,
-        esp_ble_mesh_server_state_value_t *value);
+                                                 esp_ble_mesh_server_state_type_t type,
+                                                 esp_ble_mesh_server_state_value_t *value);
 
 /**
  * @brief         Reset the provisioning procedure of the local BLE Mesh node.
@@ -176,7 +195,7 @@ esp_err_t esp_ble_mesh_node_local_reset(void);
  * @return       ESP_OK on success or error code otherwise.
  *
  */
-esp_err_t esp_ble_mesh_provisioner_set_node_name(int index, const char *name);
+esp_err_t esp_ble_mesh_provisioner_set_node_name(uint16_t index, const char *name);
 
 /**
  * @brief        This function is called to get the node (provisioned device) name.
@@ -188,20 +207,119 @@ esp_err_t esp_ble_mesh_provisioner_set_node_name(int index, const char *name);
  * @return       Node name on success, or NULL on failure.
  *
  */
-const char *esp_ble_mesh_provisioner_get_node_name(int index);
+const char *esp_ble_mesh_provisioner_get_node_name(uint16_t index);
 
 /**
  * @brief        This function is called to get the node (provisioned device) index.
  *
  * @param[in]    name: Name of the node (end by '\0').
  *
- * @return       Node index on success, or (negative) error code from errno.h on failure.
+ * @return       Node index on success, or an invalid value (0xFFFF) on failure.
  *
  */
-int esp_ble_mesh_provisioner_get_node_index(const char *name);
+uint16_t esp_ble_mesh_provisioner_get_node_index(const char *name);
 
 /**
- * @brief         This function is called to set the app key for the local BLE Mesh stack.
+ * @brief        This function is called to store the Composition Data of the node.
+ *
+ * @param[in]    unicast_addr: Element address of the node
+ * @param[in]    data:         Pointer of Composition Data
+ * @param[in]    length:       Length of Composition Data
+ *
+ * @return       ESP_OK on success or error code otherwise.
+ *
+ */
+esp_err_t esp_ble_mesh_provisioner_store_node_comp_data(uint16_t unicast_addr,
+                                                        uint8_t *data, uint16_t length);
+
+/**
+ * @brief        This function is called to get the provisioned node information
+ *               with the node device uuid.
+ *
+ * @param[in]    uuid: Device UUID of the node
+ *
+ * @return       Pointer of the node info struct or NULL on failure.
+ *
+ */
+esp_ble_mesh_node_t *esp_ble_mesh_provisioner_get_node_with_uuid(const uint8_t uuid[16]);
+
+/**
+ * @brief        This function is called to get the provisioned node information
+ *               with the node unicast address.
+ *
+ * @param[in]    unicast_addr: Unicast address of the node
+ *
+ * @return       Pointer of the node info struct or NULL on failure.
+ *
+ */
+esp_ble_mesh_node_t *esp_ble_mesh_provisioner_get_node_with_addr(uint16_t unicast_addr);
+
+/**
+ * @brief        This function is called to get the provisioned node information
+ *               with the node name.
+ *
+ * @param[in]    name: Name of the node (end by '\0').
+ *
+ * @return       Pointer of the node info struct or NULL on failure.
+ *
+ */
+esp_ble_mesh_node_t *esp_ble_mesh_provisioner_get_node_with_name(const char *name);
+
+/**
+ * @brief         This function is called by Provisioner to get provisioned node count.
+ *
+ * @return        Number of the provisioned nodes.
+ *
+ */
+uint16_t esp_ble_mesh_provisioner_get_prov_node_count(void);
+
+/**
+ * @brief         This function is called by Provisioner to get the entry of the node table.
+ *
+ * @note          After invoking the function to get the entry of nodes, users can use the "for"
+ *                loop combined with the macro CONFIG_BLE_MESH_MAX_PROV_NODES to get each node's
+ *                information. Before trying to read the node's information, users need to check
+ *                if the node exists, i.e. if the *(esp_ble_mesh_node_t **node) is NULL.
+ *                For example:
+ *                ```
+ *                const esp_ble_mesh_node_t **entry = esp_ble_mesh_provisioner_get_node_table_entry();
+ *                for (int i = 0; i < CONFIG_BLE_MESH_MAX_PROV_NODES; i++) {
+ *                    const esp_ble_mesh_node_t *node = entry[i];
+ *                    if (node) {
+ *                        ......
+ *                    }
+ *                }
+ *                ```
+ *
+ * @return        Pointer to the start of the node table.
+ *
+ */
+const esp_ble_mesh_node_t **esp_ble_mesh_provisioner_get_node_table_entry(void);
+
+/**
+ * @brief        This function is called to delete the provisioned node information
+ *               with the node device uuid.
+ *
+ * @param[in]    uuid: Device UUID of the node
+ *
+ * @return       ESP_OK on success or error code otherwise.
+ *
+ */
+esp_err_t esp_ble_mesh_provisioner_delete_node_with_uuid(const uint8_t uuid[16]);
+
+/**
+ * @brief        This function is called to delete the provisioned node information
+ *               with the node unicast address.
+ *
+ * @param[in]    unicast_addr: Unicast address of the node
+ *
+ * @return       ESP_OK on success or error code otherwise.
+ *
+ */
+esp_err_t esp_ble_mesh_provisioner_delete_node_with_addr(uint16_t unicast_addr);
+
+/**
+ * @brief         This function is called to add a local AppKey for Provisioner.
  *
  * @param[in]     app_key: The app key to be set for the local BLE Mesh stack.
  * @param[in]     net_idx: The network key index.
@@ -215,7 +333,21 @@ int esp_ble_mesh_provisioner_get_node_index(const char *name);
  * @return        ESP_OK on success or error code otherwise.
  *
  */
-esp_err_t esp_ble_mesh_provisioner_add_local_app_key(const uint8_t app_key[16], uint16_t net_idx, uint16_t app_idx);
+esp_err_t esp_ble_mesh_provisioner_add_local_app_key(const uint8_t app_key[16],
+                                                     uint16_t net_idx, uint16_t app_idx);
+
+/**
+ * @brief         This function is used to update a local AppKey for Provisioner.
+ *
+ * @param[in]     app_key: Value of the AppKey.
+ * @param[in]     net_idx: Corresponding NetKey Index.
+ * @param[in]     app_idx: The AppKey Index
+ *
+ * @return        ESP_OK on success or error code otherwise.
+ *
+ */
+esp_err_t esp_ble_mesh_provisioner_update_local_app_key(const uint8_t app_key[16],
+                                                        uint16_t net_idx, uint16_t app_idx);
 
 /**
  * @brief         This function is called by Provisioner to get the local app key value.
@@ -243,7 +375,7 @@ const uint8_t *esp_ble_mesh_provisioner_get_local_app_key(uint16_t net_idx, uint
  *
  */
 esp_err_t esp_ble_mesh_provisioner_bind_app_key_to_local_model(uint16_t element_addr, uint16_t app_idx,
-        uint16_t model_id, uint16_t company_id);
+                                                               uint16_t model_id, uint16_t company_id);
 
 /**
  * @brief         This function is called by Provisioner to add local network key.
@@ -259,6 +391,17 @@ esp_err_t esp_ble_mesh_provisioner_bind_app_key_to_local_model(uint16_t element_
  *
  */
 esp_err_t esp_ble_mesh_provisioner_add_local_net_key(const uint8_t net_key[16], uint16_t net_idx);
+
+/**
+ * @brief         This function is called by Provisioner to update a local network key.
+ *
+ * @param[in]     net_key: Value of the NetKey.
+ * @param[in]     net_idx: The NetKey Index.
+ *
+ * @return        ESP_OK on success or error code otherwise.
+ *
+ */
+esp_err_t esp_ble_mesh_provisioner_update_local_net_key(const uint8_t net_key[16], uint16_t net_idx);
 
 /**
  * @brief         This function is called by Provisioner to get the local network key value.
@@ -280,5 +423,9 @@ const uint8_t *esp_ble_mesh_provisioner_get_local_net_key(uint16_t net_idx);
  *
  */
 const uint8_t *esp_ble_mesh_get_fast_prov_app_key(uint16_t net_idx, uint16_t app_idx);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* _ESP_BLE_MESH_NETWORKING_API_H_ */

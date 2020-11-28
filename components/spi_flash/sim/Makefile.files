@@ -16,7 +16,7 @@ INCLUDE_DIRS := \
 	$(addprefix stubs/, \
 	app_update/include \
 	driver/include \
-	esp32/include \
+	esp_timer/include \
 	freertos/include \
 	log/include \
 	newlib/include \
@@ -26,12 +26,15 @@ INCLUDE_DIRS := \
 	$(addprefix ../../../components/, \
 	esp_rom/include \
 	esp_common/include \
+	esp_system/include \
 	xtensa/include \
 	xtensa/esp32/include \
 	soc/esp32/include \
 	soc/include \
 	esp32/include \
+	esp_timer/include \
 	bootloader_support/include \
 	app_update/include \
+	hal/include \
 	spi_flash/include \
 	)

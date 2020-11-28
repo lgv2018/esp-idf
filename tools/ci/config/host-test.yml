@@ -1,32 +1,22 @@
-
 .host_test_template:
+  extends: .rules:labels:host_test
   stage: host_test
   image: $CI_DOCKER_REGISTRY/esp32-ci-env$BOT_DOCKER_IMAGE_TAG
   tags:
     - host_test
   dependencies: []
-  only:
-    variables:
-      - $BOT_TRIGGER_WITH_LABEL == null
-      - $BOT_LABEL_HOST_TEST
-      - $BOT_LABEL_REGULAR_TEST
 
 .host_fuzzer_test_template:
-  stage: host_test
+  extends:
+    - .host_test_template
+    - .rules:labels:fuzzer_test-weekend_test-only
   image: $CI_DOCKER_REGISTRY/afl-fuzzer-test
-  tags:
-    - host_test
-  dependencies: []
   artifacts:
     when: always
     paths:
       - ${FUZZER_TEST_DIR}/out/crashes
       - ${FUZZER_TEST_DIR}/fuzz_output.log
     expire_in: 1 week
-  only:
-    variables:
-      - $BOT_LABEL_FUZZER_TEST
-      - $BOT_LABEL_WEEKEND_TEST
   script:
     - export AFL_I_DONT_CARE_ABOUT_MISSING_CRASHES=1 && export AFL_SKIP_CPUFREQ=1
     - cd ${FUZZER_TEST_DIR}
@@ -36,42 +26,20 @@
     # check no crashes found
     - test -z "$(ls out/crashes/)" || exit 1
 
-.clang_tidy_check_template:
-  stage: host_test
-  image: ${CI_DOCKER_REGISTRY}/clang-static-analysis
-  tags:
-    - host_test
-  dependencies: []
-  artifacts:
-    reports:
-      junit: $IDF_PATH/output.xml
-    when: always
-    paths:
-      - $IDF_PATH/examples/get-started/hello_world/tidybuild/report/*
-    expire_in: 1 day
-  script:
-    - git clone $IDF_ANALYSIS_UTILS static_analysis_utils && cd static_analysis_utils
-    # Setup parameters of triggered/regular job
-    - export TRIGGERED_RELATIVE=${BOT_LABEL_STATIC_ANALYSIS-} && export TRIGGERED_ABSOLUTE=${BOT_LABEL_STATIC_ANALYSIS_ALL-} && export TARGET_BRANCH=${BOT_CUSTOMIZED_REVISION-}
-    - ./analyze.sh $IDF_PATH/examples/get-started/hello_world/ $IDF_PATH/tools/ci/static-analysis-rules.yml $IDF_PATH/output.xml
-
 test_nvs_on_host:
   extends: .host_test_template
   script:
     - cd components/nvs_flash/test_nvs_host
-    - make test
+    - ${IDF_PATH}/tools/ci/multirun_with_pyenv.sh make test
 
 test_nvs_coverage:
-  extends: .host_test_template
+  extends:
+    - .host_test_template
+    - .rules:labels:nvs_coverage-only
   artifacts:
     paths:
       - components/nvs_flash/test_nvs_host/coverage_report
     expire_in: 1 week
-  only:
-    refs:
-      - triggers
-    variables:
-      - $BOT_LABEL_NVS_COVERAGE
   script:
     - cd components/nvs_flash/test_nvs_host
     - make coverage_report
@@ -107,21 +75,6 @@ test_ldgen_on_host:
     - ./test_fragments.py
     - ./test_generation.py
 
-clang_tidy_check:
-  extends: .clang_tidy_check_template
-  variables:
-    BOT_NEEDS_TRIGGER_BY_NAME: 1
-    BOT_LABEL_STATIC_ANALYSIS: 1
-
-clang_tidy_check_regular:
-  extends: .clang_tidy_check_template
-
-clang_tidy_check_all:
-  extends: .clang_tidy_check_template
-  variables:
-    BOT_NEEDS_TRIGGER_BY_NAME: 1
-    BOT_LABEL_STATIC_ANALYSIS_ALL: 1
-
 test_mdns_fuzzer_on_host:
   extends: .host_fuzzer_test_template
   variables:
@@ -145,6 +98,17 @@ test_lwip_dhcps_fuzzer_on_host:
     FUZZER_TEST_DIR: components/lwip/test_afl_host
     FUZZER_PARAMS: MODE=dhcp_server
 
+test_compile_fuzzers:
+  extends: .host_test_template
+  image: $CI_DOCKER_REGISTRY/afl-fuzzer-test
+  script:
+    - cd ${IDF_PATH}/components/lwip/test_afl_host
+    - make MODE=dhcp_server
+    - make MODE=dhcp_client
+    - make MODE=dns
+    - cd ${IDF_PATH}/components/mdns/test_afl_fuzz_host
+    - make
+
 test_spiffs_on_host:
   extends: .host_test_template
   script:
@@ -157,11 +121,31 @@ test_multi_heap_on_host:
     - cd components/heap/test_multi_heap_host
     - ./test_all_configs.sh
 
+test_certificate_bundle_on_host:
+  extends: .host_test_template
+  tags:
+    - build
+  script:
+    - cd components/mbedtls/esp_crt_bundle/test_gen_crt_bundle/
+    - ${IDF_PATH}/tools/ci/multirun_with_pyenv.sh ./test_gen_crt_bundle.py
+
 test_confserver:
   extends: .host_test_template
   script:
-    - cd tools/kconfig_new/test
+    - cd tools/kconfig_new/test/confserver
     - ${IDF_PATH}/tools/ci/multirun_with_pyenv.sh ./test_confserver.py
+
+test_gen_kconfig_doc:
+  extends: .host_test_template
+  script:
+    - cd tools/kconfig_new/test/gen_kconfig_doc/
+    - ${IDF_PATH}/tools/ci/multirun_with_pyenv.sh ./test_target_visibility.py
+
+test_confgen:
+  extends: .host_test_template
+  script:
+    - cd tools/kconfig_new/test/confgen/
+    - ${IDF_PATH}/tools/ci/multirun_with_pyenv.sh ./test_confgen.py
 
 test_idf_monitor:
   extends: .host_test_template
@@ -199,7 +183,7 @@ test_idf_tools:
   extends: .host_test_template
   script:
     # Remove Xtensa and ULP toolchains from the PATH, tests will expect a clean environment
-    - export PATH=$(p=$(echo $PATH | tr ":" "\n" | grep -v "/root/.espressif/tools\|/opt/espressif${CUSTOM_TOOLCHAIN_PATH:+\|${CUSTOM_TOOLCHAIN_PATH}}" | tr "\n" ":"); echo ${p%:})
+    - export PATH=$(p=$(echo $PATH | tr ":" "\n" | grep -v "/root/.espressif/tools\|/opt/espressif" | tr "\n" ":"); echo ${p%:})
     - cd ${IDF_PATH}/tools/test_idf_tools
     - ${IDF_PATH}/tools/ci/multirun_with_pyenv.sh ./test_idf_tools.py
 
@@ -285,27 +269,35 @@ test_sysviewtrace_proc:
     - cd ${IDF_PATH}/tools/esp_app_trace/test/sysview
     - ${IDF_PATH}/tools/ci/multirun_with_pyenv.sh ./test.sh
 
-check_doc_links:
-  stage: host_test
-  image: $CI_DOCKER_REGISTRY/esp32-ci-env$BOT_DOCKER_IMAGE_TAG
-  tags:
-    - check_doc_links
-  only:
-    refs:
-      # can only be triggered
-      - triggers
-    variables:
-      - $BOT_TRIGGER_WITH_LABEL == null
-      - $BOT_LABEL_BUILD_DOCS
-  artifacts:
-    paths:
-      - docs/_build/linkcheck
-    expire_in: 1 week
-  dependencies: []
+test_mkdfu:
+  extends: .host_test_template
+  variables:
+    LC_ALL: C.UTF-8
   script:
-    # must be triggered with CHECK_LINKS=Yes, otherwise exit without test
-    - test "$CHECK_LINKS" = "Yes" || exit 0
-    # can only run on master branch (otherwise the commit is not on Github yet)
-    - test "${CI_COMMIT_REF_NAME}" = "master" || exit 0
-    - cd docs
-    - make linkcheck
+    - cd ${IDF_PATH}/tools/test_mkdfu
+    - ${IDF_PATH}/tools/ci/multirun_with_pyenv.sh ./test_mkdfu.py
+
+test_docs:
+  extends: .host_test_template
+  image: $ESP_IDF_DOC_ENV_IMAGE
+  artifacts:
+    when: on_failure
+    paths:
+      - docs/test/_build/*/*/*/html/*
+    expire_in: 1 week
+  script:
+    - cd ${IDF_PATH}/docs/test
+    - ${IDF_PATH}/tools/ci/multirun_with_pyenv.sh -p 3.6.10 pip install -r ${IDF_PATH}/docs/requirements.txt
+    - ${IDF_PATH}/tools/ci/multirun_with_pyenv.sh -p 3.6.10 ./test_docs.py
+    - ${IDF_PATH}/tools/ci/multirun_with_pyenv.sh -p 3.6.10 ./test_sphinx_idf_extensions.py
+
+test_autocomplete:
+  extends: .host_test_template
+  image: $CI_DOCKER_REGISTRY/linux-shells:1
+  artifacts:
+    when: on_failure
+    paths:
+      - ${IDF_PATH}/*.out
+    expire_in: 1 week
+  script:
+    - ${IDF_PATH}/tools/ci/multirun_with_pyenv.sh ${IDF_PATH}/tools/ci/test_autocomplete.py

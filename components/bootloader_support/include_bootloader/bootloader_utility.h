@@ -76,6 +76,11 @@ void bootloader_utility_load_boot_image_from_deep_sleep(void);
 __attribute__((noreturn)) void bootloader_reset(void);
 
 /**
+ * @brief Do any cleanup before exiting the bootloader, before starting the app or resetting
+ */
+void bootloader_atexit(void);
+
+/**
  * @brief Converts an array to a printable string.
  *
  * This function is useful for printing SHA-256 digest.
@@ -108,3 +113,17 @@ esp_err_t bootloader_sha256_hex_to_str(char *out_str, const uint8_t *in_array_he
  * @param label Label to print at beginning of log line.
  */
 void bootloader_debug_buffer(const void *buffer, size_t length, const char *label);
+
+/** @brief Generates the digest of the data between offset & offset+length.
+ *
+ * This function should be used when the size of the data is larger than 3.2MB.
+ * The MMU capacity is 3.2MB (50 pages - 64KB each). This function generates the SHA-256
+ * of the data in chunks of 3.2MB, considering the MMU capacity.
+ *
+ * @param[in]  flash_offset  Offset of the data in flash.
+ * @param[in]  len           Length of data in bytes.
+ * @param[out] digest        Pointer to buffer where the digest is written, if ESP_OK is returned.
+ *
+ * @return ESP_OK if secure boot digest is generated successfully.
+ */
+esp_err_t bootloader_sha256_flash_contents(uint32_t flash_offset, uint32_t len, uint8_t *digest);

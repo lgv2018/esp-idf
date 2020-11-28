@@ -23,11 +23,7 @@ typedef enum {
     PERIPH_LEDC_MODULE = 0,
     PERIPH_UART0_MODULE,
     PERIPH_UART1_MODULE,
-#ifdef CONFIG_CHIP_IS_ESP32
-    PERIPH_UART2_MODULE,
-#else
     PERIPH_USB_MODULE,
-#endif
     PERIPH_I2C0_MODULE,
     PERIPH_I2C1_MODULE,
     PERIPH_I2S0_MODULE,
@@ -45,20 +41,21 @@ typedef enum {
     PERIPH_SPI_MODULE,  //SPI1
     PERIPH_FSPI_MODULE, //SPI2
     PERIPH_HSPI_MODULE, //SPI3
-    PERIPH_VSPI_MODULE, //SPI4
     PERIPH_SPI2_DMA_MODULE,
     PERIPH_SPI3_DMA_MODULE,
-    PERIPH_SPI_SHARED_DMA_MODULE,   //this DMA is shared by SPI1 and SPI4
-    PERIPH_SDMMC_MODULE,
-    PERIPH_SDIO_SLAVE_MODULE,
-    PERIPH_CAN_MODULE,
-    PERIPH_EMAC_MODULE,
+    PERIPH_TWAI_MODULE,
     PERIPH_RNG_MODULE,
     PERIPH_WIFI_MODULE,
-    PERIPH_BT_MODULE,
     PERIPH_WIFI_BT_COMMON_MODULE,
-    PERIPH_BT_BASEBAND_MODULE,
-    PERIPH_BT_LC_MODULE,
+    PERIPH_SYSTIMER_MODULE,
+    PERIPH_AES_MODULE,
+    PERIPH_SHA_MODULE,
+    PERIPH_RSA_MODULE,
+    PERIPH_CRYPTO_DMA_MODULE,        //this DMA is shared between AES and SHA
+    PERIPH_AES_DMA_MODULE,
+    PERIPH_SHA_DMA_MODULE,
+    PERIPH_DEDIC_GPIO_MODULE,
+    PERIPH_MODULE_MAX
 } periph_module_t;
 
 typedef enum {
@@ -111,7 +108,7 @@ typedef enum {
     ETS_PWM3_INTR_SOURCE,                       /**< interruot of PWM3, level*/
     ETS_LEDC_INTR_SOURCE,                       /**< interrupt of LED PWM, level*/
     ETS_EFUSE_INTR_SOURCE,                      /**< interrupt of efuse, level, not likely to use*/
-    ETS_CAN_INTR_SOURCE ,                       /**< interrupt of can, level*/
+    ETS_TWAI_INTR_SOURCE ,                      /**< interrupt of twai, level*/
 
     ETS_USB_INTR_SOURCE = 48,                   /**< interrupt of USB, level*/
     ETS_RTC_CORE_INTR_SOURCE,                   /**< interrupt of rtc core, level, include rtc watchdog*/

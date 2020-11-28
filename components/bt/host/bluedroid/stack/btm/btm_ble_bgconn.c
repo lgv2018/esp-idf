@@ -185,7 +185,7 @@ BOOLEAN btm_add_dev_to_controller (BOOLEAN to_add, BD_ADDR bd_addr, tBLE_ADDR_TY
             }
             p_dev_rec->ble.in_controller_list &= ~BTM_WHITE_LIST_BIT;
         }
-    }    // if not a known device, shall we add it? 
+    }    // if not a known device, shall we add it?
     else {
         BTM_ReadDevInfo(bd_addr, &dev_type, &addr_type);
 
@@ -385,6 +385,8 @@ void btm_ble_clear_white_list_complete(UINT8 *p_data, UINT16 evt_len)
 
     if (status == HCI_SUCCESS) {
         p_cb->white_list_avail_size = controller_get_interface()->get_ble_white_list_size();
+    } else {
+        BTM_TRACE_ERROR ("%s failed, status 0x%x\n", __func__, status);
     }
 }
 
@@ -812,5 +814,3 @@ BOOLEAN btm_send_pending_direct_conn(void)
 }
 
 #endif
-
-

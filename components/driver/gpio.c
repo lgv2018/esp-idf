@@ -24,10 +24,11 @@
 #include "esp_ipc.h"
 #endif
 
-#include "soc/gpio_caps.h"
+#include "soc/soc_caps.h"
 #include "soc/gpio_periph.h"
 #include "esp_log.h"
 #include "hal/gpio_hal.h"
+#include "esp_rom_gpio.h"
 
 static const char *GPIO_TAG = "gpio";
 #define GPIO_CHECK(a, str, ret_val) \
@@ -35,7 +36,13 @@ static const char *GPIO_TAG = "gpio";
         ESP_LOGE(GPIO_TAG,"%s(%d): %s", __FUNCTION__, __LINE__, str); \
         return (ret_val); \
     }
+
 #define GPIO_ISR_CORE_ID_UNINIT    (3)
+
+//default value for SOC_GPIO_SUPPORT_RTC_INDEPENDENT is 0
+#ifndef SOC_GPIO_SUPPORT_RTC_INDEPENDENT
+#define SOC_GPIO_SUPPORT_RTC_INDEPENDENT 0
+#endif
 
 typedef struct {
     gpio_isr_t fn;   /*!< isr function */
@@ -75,7 +82,7 @@ esp_err_t gpio_pullup_en(gpio_num_t gpio_num)
 {
     GPIO_CHECK(GPIO_IS_VALID_GPIO(gpio_num), "GPIO number error", ESP_ERR_INVALID_ARG);
 
-    if (!rtc_gpio_is_valid_gpio(gpio_num) || GPIO_SUPPORTS_RTC_INDEPENDENT) {
+    if (!rtc_gpio_is_valid_gpio(gpio_num) || SOC_GPIO_SUPPORT_RTC_INDEPENDENT) {
         portENTER_CRITICAL(&gpio_context.gpio_spinlock);
         gpio_hal_pullup_en(gpio_context.gpio_hal, gpio_num);
         portEXIT_CRITICAL(&gpio_context.gpio_spinlock);
@@ -90,7 +97,7 @@ esp_err_t gpio_pullup_dis(gpio_num_t gpio_num)
 {
     GPIO_CHECK(GPIO_IS_VALID_GPIO(gpio_num), "GPIO number error", ESP_ERR_INVALID_ARG);
 
-    if (!rtc_gpio_is_valid_gpio(gpio_num) || GPIO_SUPPORTS_RTC_INDEPENDENT) {
+    if (!rtc_gpio_is_valid_gpio(gpio_num) || SOC_GPIO_SUPPORT_RTC_INDEPENDENT) {
         portENTER_CRITICAL(&gpio_context.gpio_spinlock);
         gpio_hal_pullup_dis(gpio_context.gpio_hal, gpio_num);
         portEXIT_CRITICAL(&gpio_context.gpio_spinlock);
@@ -105,7 +112,7 @@ esp_err_t gpio_pulldown_en(gpio_num_t gpio_num)
 {
     GPIO_CHECK(GPIO_IS_VALID_GPIO(gpio_num), "GPIO number error", ESP_ERR_INVALID_ARG);
 
-    if (!rtc_gpio_is_valid_gpio(gpio_num) || GPIO_SUPPORTS_RTC_INDEPENDENT) {
+    if (!rtc_gpio_is_valid_gpio(gpio_num) || SOC_GPIO_SUPPORT_RTC_INDEPENDENT) {
         portENTER_CRITICAL(&gpio_context.gpio_spinlock);
         gpio_hal_pulldown_en(gpio_context.gpio_hal, gpio_num);
         portEXIT_CRITICAL(&gpio_context.gpio_spinlock);
@@ -120,7 +127,7 @@ esp_err_t gpio_pulldown_dis(gpio_num_t gpio_num)
 {
     GPIO_CHECK(GPIO_IS_VALID_GPIO(gpio_num), "GPIO number error", ESP_ERR_INVALID_ARG);
 
-    if (!rtc_gpio_is_valid_gpio(gpio_num) || GPIO_SUPPORTS_RTC_INDEPENDENT) {
+    if (!rtc_gpio_is_valid_gpio(gpio_num) || SOC_GPIO_SUPPORT_RTC_INDEPENDENT) {
         portENTER_CRITICAL(&gpio_context.gpio_spinlock);
         gpio_hal_pulldown_dis(gpio_context.gpio_hal, gpio_num);
         portEXIT_CRITICAL(&gpio_context.gpio_spinlock);
@@ -192,7 +199,7 @@ static esp_err_t gpio_output_enable(gpio_num_t gpio_num)
 {
     GPIO_CHECK(GPIO_IS_VALID_OUTPUT_GPIO(gpio_num), "GPIO output gpio_num error", ESP_ERR_INVALID_ARG);
     gpio_hal_output_enable(gpio_context.gpio_hal, gpio_num);
-    gpio_matrix_out(gpio_num, SIG_GPIO_OUT_IDX, false, false);
+    esp_rom_gpio_connect_out_signal(gpio_num, SIG_GPIO_OUT_IDX, false, false);
     return ESP_OK;
 }
 
@@ -301,26 +308,23 @@ esp_err_t gpio_config(const gpio_config_t *pGPIOConfig)
     uint8_t pu_en = 0;
     uint8_t pd_en = 0;
 
-    if (pGPIOConfig->pin_bit_mask == 0 || pGPIOConfig->pin_bit_mask >= (((uint64_t) 1) << GPIO_PIN_COUNT)) {
+    if (pGPIOConfig->pin_bit_mask == 0 ||
+        pGPIOConfig->pin_bit_mask & ~SOC_GPIO_VALID_GPIO_MASK) {
         ESP_LOGE(GPIO_TAG, "GPIO_PIN mask error ");
         return ESP_ERR_INVALID_ARG;
     }
 
-    if ((pGPIOConfig->mode) & (GPIO_MODE_DEF_OUTPUT)) {
-        if(GPIO_MASK_CONTAIN_INPUT_GPIO(gpio_pin_mask)) {
-            ESP_LOGE(GPIO_TAG, "GPIO can only be used as input mode");
-            return ESP_ERR_INVALID_ARG;
-        }
+    if (pGPIOConfig->mode & GPIO_MODE_DEF_OUTPUT &&
+        pGPIOConfig->pin_bit_mask & ~SOC_GPIO_VALID_OUTPUT_GPIO_MASK) {
+        ESP_LOGE(GPIO_TAG, "GPIO can only be used as input mode");
+        return ESP_ERR_INVALID_ARG;
     }
 
     do {
         io_reg = GPIO_PIN_MUX_REG[io_num];
 
         if (((gpio_pin_mask >> io_num) & BIT(0))) {
-            if (!io_reg) {
-                ESP_LOGE(GPIO_TAG, "IO%d is not a valid GPIO", io_num);
-                return ESP_ERR_INVALID_ARG;
-            }
+            assert(io_reg != (intptr_t)NULL);
 
             if (rtc_gpio_is_valid_gpio(io_num)) {
                 rtc_gpio_deinit(io_num);
@@ -535,11 +539,10 @@ esp_err_t gpio_wakeup_enable(gpio_num_t gpio_num, gpio_int_type_t intr_type)
     if ((intr_type == GPIO_INTR_LOW_LEVEL) || (intr_type == GPIO_INTR_HIGH_LEVEL)) {
         if (rtc_gpio_is_valid_gpio(gpio_num)) {
             ret = rtc_gpio_wakeup_enable(gpio_num, intr_type);
-        } else {
-            portENTER_CRITICAL(&gpio_context.gpio_spinlock);
-            gpio_hal_wakeup_enable(gpio_context.gpio_hal, gpio_num, intr_type);
-            portEXIT_CRITICAL(&gpio_context.gpio_spinlock);
         }
+        portENTER_CRITICAL(&gpio_context.gpio_spinlock);
+        gpio_hal_wakeup_enable(gpio_context.gpio_hal, gpio_num, intr_type);
+        portEXIT_CRITICAL(&gpio_context.gpio_spinlock);
     } else {
         ESP_LOGE(GPIO_TAG, "GPIO wakeup only supports level mode, but edge mode set. gpio_num:%u", gpio_num);
         ret = ESP_ERR_INVALID_ARG;
@@ -555,11 +558,10 @@ esp_err_t gpio_wakeup_disable(gpio_num_t gpio_num)
 
     if (rtc_gpio_is_valid_gpio(gpio_num)) {
         ret = rtc_gpio_wakeup_disable(gpio_num);
-    } else {
-        portENTER_CRITICAL(&gpio_context.gpio_spinlock);
-        gpio_hal_wakeup_disable(gpio_context.gpio_hal, gpio_num);
-        portEXIT_CRITICAL(&gpio_context.gpio_spinlock);
     }
+    portENTER_CRITICAL(&gpio_context.gpio_spinlock);
+    gpio_hal_wakeup_disable(gpio_context.gpio_hal, gpio_num);
+    portEXIT_CRITICAL(&gpio_context.gpio_spinlock);
     return ret;
 }
 
@@ -569,7 +571,7 @@ esp_err_t gpio_set_drive_capability(gpio_num_t gpio_num, gpio_drive_cap_t streng
     GPIO_CHECK(strength < GPIO_DRIVE_CAP_MAX, "GPIO drive capability error", ESP_ERR_INVALID_ARG);
     esp_err_t ret = ESP_OK;
 
-    if (!rtc_gpio_is_valid_gpio(gpio_num) || GPIO_SUPPORTS_RTC_INDEPENDENT) {
+    if (!rtc_gpio_is_valid_gpio(gpio_num) || SOC_GPIO_SUPPORT_RTC_INDEPENDENT) {
         portENTER_CRITICAL(&gpio_context.gpio_spinlock);
         gpio_hal_set_drive_capability(gpio_context.gpio_hal, gpio_num, strength);
         portEXIT_CRITICAL(&gpio_context.gpio_spinlock);
@@ -586,7 +588,7 @@ esp_err_t gpio_get_drive_capability(gpio_num_t gpio_num, gpio_drive_cap_t *stren
     GPIO_CHECK(strength != NULL, "GPIO drive capability pointer error", ESP_ERR_INVALID_ARG);
     esp_err_t ret = ESP_OK;
 
-    if (!rtc_gpio_is_valid_gpio(gpio_num) || GPIO_SUPPORTS_RTC_INDEPENDENT) {
+    if (!rtc_gpio_is_valid_gpio(gpio_num) || SOC_GPIO_SUPPORT_RTC_INDEPENDENT) {
         portENTER_CRITICAL(&gpio_context.gpio_spinlock);
         gpio_hal_get_drive_capability(gpio_context.gpio_hal, gpio_num, strength);
         portEXIT_CRITICAL(&gpio_context.gpio_spinlock);
@@ -647,7 +649,7 @@ void gpio_deep_sleep_hold_dis(void)
     portEXIT_CRITICAL(&gpio_context.gpio_spinlock);
 }
 
-#if GPIO_SUPPORTS_FORCE_HOLD
+#if SOC_GPIO_SUPPORT_FORCE_HOLD
 
 esp_err_t gpio_force_hold_all()
 {

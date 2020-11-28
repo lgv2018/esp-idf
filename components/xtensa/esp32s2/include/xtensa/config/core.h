@@ -1,4 +1,4 @@
-/* 
+/*
  * xtensa/config/core.h -- HAL definitions dependent on CORE configuration
  *
  *  This header file is sometimes referred to as the "compile-time HAL" or CHAL.
@@ -63,6 +63,10 @@
 #include "tie-asm.h"
 #endif
 #endif /*_ASMLANGUAGE or __ASSEMBLER__*/
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 
 /*----------------------------------------------------------------------
@@ -1403,6 +1407,8 @@ extern const unsigned int  XCJOIN(Xthal_cp_mask_,XCHAL_CP7_IDENT);
 # define XCHAL_HW_RELEASE_MAJOR_AT(major)		XCHAL_HW_RELEASE_AT(major,0)
 #endif
 
+#ifdef __cplusplus
+}
+#endif
 
 #endif /*XTENSA_CONFIG_CORE_H*/
-

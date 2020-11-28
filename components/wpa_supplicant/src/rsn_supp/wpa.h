@@ -18,7 +18,7 @@
 #include "sdkconfig.h"
 
 #ifdef CONFIG_IDF_TARGET_ESP32
-#include "esp32/rom/ets_sys.h"
+#include "esp32/rom/ets_sys.h" // will be removed in idf v5.0
 #elif CONFIG_IDF_TARGET_ESP32S2
 #include "esp32s2/rom/ets_sys.h"
 #endif
@@ -37,6 +37,7 @@ struct wpa_sm;
 int wpa_sm_rx_eapol(u8 *src_addr, u8 *buf, u32 len);
 bool wpa_sta_is_cur_pmksa_set(void);
 bool wpa_sta_in_4way_handshake(void);
+bool wpa_sta_cur_pmksa_matches_akm(void);
 
 #define WPA_ASSERT  assert
 
@@ -119,7 +120,7 @@ void wpa_sm_set_state(enum wpa_states state);
 
 char * dup_binstr(const void *src, size_t len);
 
-void wpa_set_pmk(uint8_t *pmk);
+void wpa_set_pmk(uint8_t *pmk, const u8 *pmkid, bool cache_pmksa);
 
 int wpa_hook_init(void);
 
@@ -129,9 +130,10 @@ char * dup_binstr(const void *src, size_t len);
 
 int wpa_michael_mic_failure(u16 isunicast);
 
-wifi_cipher_type_t cipher_type_map_supp_to_public(uint32_t wpa_cipher);
+wifi_cipher_type_t cipher_type_map_supp_to_public(unsigned cipher);
 
-uint32_t cipher_type_map_supp_to_public(wifi_cipher_type_t cipher);
+unsigned cipher_type_map_public_to_supp(wifi_cipher_type_t cipher);
+
+void wpa_sta_clear_curr_pmksa(void);
 
 #endif /* WPA_H */
-

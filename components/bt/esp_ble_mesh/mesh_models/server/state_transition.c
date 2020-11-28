@@ -6,35 +6,26 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <string.h>
-#include <errno.h>
-#include <stdbool.h>
-
-#include "mesh_types.h"
-#include "mesh_kernel.h"
-#include "mesh_trace.h"
-#include "mesh.h"
-#include "model_opcode.h"
-
-#include "server_common.h"
-#include "state_binding.h"
-#include "state_transition.h"
-#include "generic_server.h"
-#include "lighting_server.h"
-#include "time_scene_server.h"
-
 #include "btc_ble_mesh_generic_model.h"
 #include "btc_ble_mesh_lighting_model.h"
 #include "btc_ble_mesh_time_scene_model.h"
 #include "btc_ble_mesh_sensor_model.h"
 
+#include "mesh_config.h"
+#include "model_opcode.h"
+#include "state_transition.h"
+
+#if (CONFIG_BLE_MESH_GENERIC_SERVER | \
+     CONFIG_BLE_MESH_TIME_SCENE_SERVER | \
+     CONFIG_BLE_MESH_LIGHTING_SERVER)
+
 /* Function to calculate Remaining Time (Start) */
 
 void bt_mesh_server_calc_remain_time(struct bt_mesh_state_transition *transition)
 {
-    u8_t steps, resolution;
-    s32_t duration_remainder;
-    s64_t now;
+    u8_t steps = 0U, resolution = 0U;
+    s32_t duration_remainder = 0;
+    s64_t now = 0;
 
     if (transition->just_started) {
         transition->remain_time = transition->trans_time;
@@ -71,7 +62,7 @@ void bt_mesh_server_calc_remain_time(struct bt_mesh_state_transition *transition
 
 static void tt_values_calculator(struct bt_mesh_state_transition *transition)
 {
-    u8_t steps_multiplier, resolution;
+    u8_t steps_multiplier = 0U, resolution = 0U;
 
     resolution = (transition->trans_time >> 6);
     steps_multiplier = (transition->trans_time & 0x3F);
@@ -112,6 +103,20 @@ static void transition_time_values(struct bt_mesh_state_transition *transition,
     transition->quo_tt = transition->total_duration / transition->counter;
 }
 
+static void transition_timer_start(struct bt_mesh_state_transition *transition)
+{
+    transition->start_timestamp = k_uptime_get();
+    k_delayed_work_submit_periodic(&transition->timer, K_MSEC(transition->quo_tt));
+    bt_mesh_atomic_set_bit(transition->flag, BLE_MESH_TRANS_TIMER_START);
+}
+
+static void transition_timer_stop(struct bt_mesh_state_transition *transition)
+{
+    k_delayed_work_cancel(&transition->timer);
+    bt_mesh_atomic_clear_bit(transition->flag, BLE_MESH_TRANS_TIMER_START);
+}
+
+#if CONFIG_BLE_MESH_GENERIC_SERVER
 void generic_onoff_tt_values(struct bt_mesh_gen_onoff_srv *srv,
                              u8_t trans_time, u8_t delay)
 {
@@ -133,7 +138,9 @@ void generic_power_level_tt_values(struct bt_mesh_gen_power_level_srv *srv,
     srv->tt_delta_level =
         ((float) (srv->state->power_actual - srv->state->target_power_actual) / srv->transition.counter);
 }
+#endif /* CONFIG_BLE_MESH_GENERIC_SERVER */
 
+#if CONFIG_BLE_MESH_LIGHTING_SERVER
 void light_lightness_actual_tt_values(struct bt_mesh_light_lightness_srv *srv,
                                       u8_t trans_time, u8_t delay)
 {
@@ -217,26 +224,18 @@ void light_lc_tt_values(struct bt_mesh_light_lc_srv *srv,
 {
     transition_time_values(&srv->transition, trans_time, delay);
 }
+#endif /* CONFIG_BLE_MESH_LIGHTING_SERVER */
 
+#if CONFIG_BLE_MESH_TIME_SCENE_SERVER
 void scene_tt_values(struct bt_mesh_scene_srv *srv, u8_t trans_time, u8_t delay)
 {
     transition_time_values(&srv->transition, trans_time, delay);
 }
-
-static void transition_timer_start(struct bt_mesh_state_transition *transition)
-{
-    transition->start_timestamp = k_uptime_get();
-    k_delayed_work_submit_periodic(&transition->timer, K_MSEC(transition->quo_tt));
-    bt_mesh_atomic_set_bit(transition->flag, BLE_MESH_TRANS_TIMER_START);
-}
-
-static void transition_timer_stop(struct bt_mesh_state_transition *transition)
-{
-    k_delayed_work_cancel(&transition->timer);
-    bt_mesh_atomic_clear_bit(transition->flag, BLE_MESH_TRANS_TIMER_START);
-}
+#endif /* CONFIG_BLE_MESH_TIME_SCENE_SERVER */
 
 /* Timers related handlers & threads (Start) */
+
+#if CONFIG_BLE_MESH_GENERIC_SERVER
 void generic_onoff_work_handler(struct k_work *work)
 {
     struct bt_mesh_gen_onoff_srv *srv =
@@ -438,7 +437,9 @@ void generic_power_level_work_handler(struct k_work *work)
     bt_mesh_generic_server_unlock();
     return;
 }
+#endif /* CONFIG_BLE_MESH_GENERIC_SERVER */
 
+#if CONFIG_BLE_MESH_LIGHTING_SERVER
 void light_lightness_actual_work_handler(struct k_work *work)
 {
     struct bt_mesh_light_lightness_srv *srv =
@@ -957,7 +958,9 @@ void light_lc_work_handler(struct k_work *work)
     bt_mesh_light_server_unlock();
     return;
 }
+#endif /* CONFIG_BLE_MESH_LIGHTING_SERVER */
 
+#if CONFIG_BLE_MESH_TIME_SCENE_SERVER
 void scene_recall_work_handler(struct k_work *work)
 {
     struct bt_mesh_scene_srv *srv =
@@ -1010,6 +1013,7 @@ void scene_recall_work_handler(struct k_work *work)
     bt_mesh_time_scene_server_unlock();
     return;
 }
+#endif /* CONFIG_BLE_MESH_TIME_SCENE_SERVER */
 
 /* Timers related handlers & threads (End) */
 
@@ -1032,3 +1036,7 @@ void bt_mesh_server_start_transition(struct bt_mesh_state_transition *transition
 }
 
 /* Messages handlers (End) */
+
+#endif /* (CONFIG_BLE_MESH_GENERIC_SERVER | \
+           CONFIG_BLE_MESH_TIME_SCENE_SERVER | \
+           CONFIG_BLE_MESH_LIGHTING_SERVER) */

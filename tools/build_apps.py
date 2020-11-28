@@ -5,9 +5,11 @@
 #
 
 import argparse
-import sys
 import logging
+import sys
+
 from find_build_apps import BuildItem, BuildError, setup_logging, BUILD_SYSTEMS
+from find_build_apps.common import rmdir, SIZE_JSON_FN
 
 
 def main():
@@ -33,8 +35,8 @@ def main():
         default=1,
         type=int,
         help="Number of parallel build jobs. Note that this script doesn't start the jobs, " +
-        "it needs to be executed multiple times with same value of --parallel-count and " +
-        "different values of --parallel-index.",
+             "it needs to be executed multiple times with same value of --parallel-count and " +
+             "different values of --parallel-index.",
     )
     parser.add_argument(
         "--parallel-index",
@@ -64,6 +66,11 @@ def main():
         help="If specified, the list of builds (with all the placeholders expanded) will be written to this file.",
     )
     parser.add_argument(
+        "--size-info",
+        type=argparse.FileType("a"),
+        help="If specified, the test case name and size info json will be written to this file"
+    )
+    parser.add_argument(
         "build_list",
         type=argparse.FileType("r"),
         nargs="?",
@@ -75,10 +82,9 @@ def main():
     setup_logging(args)
 
     build_items = [BuildItem.from_json(line) for line in args.build_list]
-
     if not build_items:
-        logging.error("Empty build list!")
-        raise SystemExit(1)
+        logging.warning("Empty build list")
+        SystemExit(0)
 
     num_builds = len(build_items)
     num_jobs = args.parallel_count
@@ -112,11 +118,18 @@ def main():
         try:
             build_system_class.build(build_info)
         except BuildError as e:
-            logging.error(e.message)
+            logging.error(str(e))
             if args.keep_going:
                 failed_builds.append(build_info)
             else:
                 raise SystemExit(1)
+        else:
+            if args.size_info:
+                build_info.write_size_info(args.size_info)
+            if not build_info.preserve:
+                logging.info("Removing build directory {}".format(build_info.build_path))
+                # we only remove binaries here, log files are still needed by check_build_warnings.py
+                rmdir(build_info.build_path, exclude_file_pattern=SIZE_JSON_FN)
 
     if failed_builds:
         logging.error("The following build have failed:")

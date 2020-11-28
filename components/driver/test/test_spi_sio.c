@@ -8,11 +8,6 @@
 #include <malloc.h>
 #include <string.h>
 #include "sdkconfig.h"
-#ifdef CONFIG_IDF_TARGET_ESP32
-#include "esp32/rom/ets_sys.h"
-#elif CONFIG_IDF_TARGET_ESP32S2
-#include "esp32s2/rom/ets_sys.h"
-#endif
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/semphr.h"
@@ -30,6 +25,7 @@
 
 #include "hal/spi_ll.h"
 
+#if !TEMPORARY_DISABLED_FOR_TARGETS(ESP32S3)
 
 /********************************************************************************
  *      Test SIO
@@ -225,4 +221,6 @@ void test_sio_slave(void)
 }
 
 TEST_CASE_MULTIPLE_DEVICES("sio mode", "[spi][test_env=Example_SPI_Multi_device]", test_sio_master, test_sio_slave);
+#endif
+
 #endif

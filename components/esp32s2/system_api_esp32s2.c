@@ -17,20 +17,20 @@
 #include "esp_system.h"
 #include "esp_private/system_internal.h"
 #include "esp_attr.h"
-#include "esp_wifi.h"
+#include "esp_efuse.h"
 #include "esp_log.h"
 #include "esp32s2/rom/cache.h"
-#include "esp32s2/rom/uart.h"
+#include "esp_rom_uart.h"
 #include "soc/dport_reg.h"
 #include "soc/gpio_reg.h"
 #include "soc/rtc_cntl_reg.h"
 #include "soc/timer_group_reg.h"
-#include "soc/timer_group_struct.h"
 #include "soc/cpu.h"
 #include "soc/rtc.h"
-#include "soc/rtc_wdt.h"
 #include "soc/syscon_reg.h"
+#include "hal/wdt_hal.h"
 #include "freertos/xtensa_api.h"
+#include "hal/cpu_hal.h"
 
 /* "inner" restart function for after RTOS, interrupts & anything else on this
  * core are already stopped. Stalls other core, resets hardware,
@@ -42,31 +42,37 @@ void IRAM_ATTR esp_restart_noos(void)
     xt_ints_off(0xFFFFFFFF);
 
     // Enable RTC watchdog for 1 second
-    rtc_wdt_protect_off();
-    rtc_wdt_disable();
-    rtc_wdt_set_stage(RTC_WDT_STAGE0, RTC_WDT_STAGE_ACTION_RESET_RTC);
-    rtc_wdt_set_stage(RTC_WDT_STAGE1, RTC_WDT_STAGE_ACTION_RESET_SYSTEM);
-    rtc_wdt_set_length_of_reset_signal(RTC_WDT_SYS_RESET_SIG, RTC_WDT_LENGTH_200ns);
-    rtc_wdt_set_length_of_reset_signal(RTC_WDT_CPU_RESET_SIG, RTC_WDT_LENGTH_200ns);
-    rtc_wdt_set_time(RTC_WDT_STAGE0, 1000);
-    rtc_wdt_flashboot_mode_enable();
+    wdt_hal_context_t rtc_wdt_ctx;
+    wdt_hal_init(&rtc_wdt_ctx, WDT_RWDT, 0, false);
+    uint32_t stage_timeout_ticks = (uint32_t)(1000ULL * rtc_clk_slow_freq_get_hz() / 1000ULL);
+    wdt_hal_write_protect_disable(&rtc_wdt_ctx);
+    wdt_hal_config_stage(&rtc_wdt_ctx, WDT_STAGE0, stage_timeout_ticks, WDT_STAGE_ACTION_RESET_SYSTEM);
+    wdt_hal_config_stage(&rtc_wdt_ctx, WDT_STAGE1, stage_timeout_ticks, WDT_STAGE_ACTION_RESET_RTC);
+    //Enable flash boot mode so that flash booting after restart is protected by the RTC WDT.
+    wdt_hal_set_flashboot_en(&rtc_wdt_ctx, true);
+    wdt_hal_write_protect_enable(&rtc_wdt_ctx);
 
     // Reset and stall the other CPU.
     // CPU must be reset before stalling, in case it was running a s32c1i
     // instruction. This would cause memory pool to be locked by arbiter
     // to the stalled CPU, preventing current CPU from accessing this pool.
-    const uint32_t core_id = xPortGetCoreID();
+    const uint32_t core_id = cpu_hal_get_core_id();
+
+    //Todo: Refactor to use Interrupt or Task Watchdog API, and a system level WDT context
     // Disable TG0/TG1 watchdogs
-    TIMERG0.wdt_wprotect = TIMG_WDT_WKEY_VALUE;
-    TIMERG0.wdt_config0.en = 0;
-    TIMERG0.wdt_wprotect = 0;
-    TIMERG1.wdt_wprotect = TIMG_WDT_WKEY_VALUE;
-    TIMERG1.wdt_config0.en = 0;
-    TIMERG1.wdt_wprotect = 0;
+    wdt_hal_context_t wdt0_context = {.inst = WDT_MWDT0, .mwdt_dev = &TIMERG0};
+    wdt_hal_write_protect_disable(&wdt0_context);
+    wdt_hal_disable(&wdt0_context);
+    wdt_hal_write_protect_enable(&wdt0_context);
+
+    wdt_hal_context_t wdt1_context = {.inst = WDT_MWDT1, .mwdt_dev = &TIMERG1};
+    wdt_hal_write_protect_disable(&wdt1_context);
+    wdt_hal_disable(&wdt1_context);
+    wdt_hal_write_protect_enable(&wdt1_context);
 
     // Flush any data left in UART FIFOs
-    uart_tx_wait_idle(0);
-    uart_tx_wait_idle(1);
+    esp_rom_uart_tx_wait_idle(0);
+    esp_rom_uart_tx_wait_idle(1);
     // Disable cache
     Cache_Disable_ICache();
     Cache_Disable_DCache();
@@ -90,11 +96,11 @@ void IRAM_ATTR esp_restart_noos(void)
 
     // Reset timer/spi/uart
     DPORT_SET_PERI_REG_MASK(DPORT_PERIP_RST_EN_REG,
-                            DPORT_TIMERS_RST | DPORT_SPI01_RST | DPORT_UART_RST);
+                            DPORT_TIMERS_RST | DPORT_SPI01_RST | DPORT_SPI2_RST | DPORT_SPI3_RST | DPORT_SPI2_DMA_RST | DPORT_SPI3_DMA_RST | DPORT_UART_RST);
     DPORT_REG_WRITE(DPORT_PERIP_RST_EN_REG, 0);
 
     // Set CPU back to XTAL source, no PLL, same as hard reset
-    rtc_clk_cpu_freq_set(RTC_CPU_FREQ_XTAL);
+    rtc_clk_cpu_freq_set_xtal();
 
     // Reset CPUs
     if (core_id == 0) {
@@ -107,9 +113,23 @@ void IRAM_ATTR esp_restart_noos(void)
 
 void esp_chip_info(esp_chip_info_t *out_info)
 {
+    uint32_t pkg_ver = esp_efuse_get_pkg_ver();
+
     memset(out_info, 0, sizeof(*out_info));
 
     out_info->model = CHIP_ESP32S2;
     out_info->cores = 1;
     out_info->features = CHIP_FEATURE_WIFI_BGN;
+
+    switch (pkg_ver) {
+    case 0: // ESP32-S2
+        break;
+    case 1: // ESP32-S2FH16
+        // fallthrough
+    case 2: // ESP32-S2FH32
+        out_info->features |= CHIP_FEATURE_EMB_FLASH;
+        break;
+    default: // New package, features unknown
+        break;
+    }
 }

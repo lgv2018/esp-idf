@@ -5,9 +5,9 @@
 
 MEMORY
 {
-  iram_loader_seg (RWX) :           org = 0x40050000, len = 0x4000  /* 16KB, SRAM Block_14 */
-  iram_seg (RWX) :                  org = 0x40054000, len = 0x4000  /* 16KB, SRAM Block_15 */
-  dram_seg (RW) :                   org = 0x3FFE8000, len = 0x2800  /* 10KB, Top of SRAM Block_16, and before ROM data and stack */
+  iram_seg (RWX) :                  org = 0x4004c000, len = 0x4000  /* SRAM Block 13 */
+  iram_loader_seg (RWX) :           org = 0x40050000, len = 0x6000  /* SRAM Block 14 & part of 15 */
+  dram_seg (RW) :                   org = 0x3FFE6000, len = 0x4B00  /* Part SRAM Blocks 15 & 16, ROM static buffer starts at end of this region (reclaimed after app runs) */
 }
 
 /*  Default entry point:  */
@@ -25,11 +25,16 @@ SECTIONS
      *(.iram1 .iram1.*) /* catch stray IRAM_ATTR */
     *liblog.a:(.literal .text .literal.* .text.*)
     *libgcc.a:(.literal .text .literal.* .text.*)
-    *libbootloader_support.a:bootloader_common.*(.literal .text .literal.* .text.*)
+    *libbootloader_support.a:bootloader_clock_loader.*(.literal .text .literal.* .text.*)
+    *libbootloader_support.a:bootloader_common_loader.*(.literal .text .literal.* .text.*)
     *libbootloader_support.a:bootloader_flash.*(.literal .text .literal.* .text.*)
     *libbootloader_support.a:bootloader_random.*(.literal .text .literal.* .text.*)
+    *libbootloader_support.a:bootloader_random*.*(.literal.bootloader_random_disable .text.bootloader_random_disable)
+    *libbootloader_support.a:bootloader_efuse_esp32s2.*(.literal .text .literal.* .text.*)
     *libbootloader_support.a:bootloader_utility.*(.literal .text .literal.* .text.*)
     *libbootloader_support.a:bootloader_sha.*(.literal .text .literal.* .text.*)
+    *libbootloader_support.a:bootloader_console_loader.*(.literal .text .literal.* .text.*)
+    *libbootloader_support.a:bootloader_panic.*(.literal .text .literal.* .text.*)
     *libbootloader_support.a:esp_image_format.*(.literal .text .literal.* .text.*)
     *libbootloader_support.a:flash_encrypt.*(.literal .text .literal.* .text.*)
     *libbootloader_support.a:flash_partitions.*(.literal .text .literal.* .text.*)
@@ -37,7 +42,10 @@ SECTIONS
     *libbootloader_support.a:secure_boot_signatures.*(.literal .text .literal.* .text.*)
     *libmicro-ecc.a:*.*(.literal .text .literal.* .text.*)
     *libspi_flash.a:*.*(.literal .text .literal.* .text.*)
-    *libsoc.a:rtc_wdt.*(.literal .text .literal.* .text.*)
+    *libhal.a:wdt_hal_iram.*(.literal .text .literal.* .text.*)
+    *libesp_hw_support.a:rtc_clk.*(.literal .text .literal.* .text.*)
+    *libesp_hw_support.a:rtc_time.*(.literal .text .literal.* .text.*)
+    *libesp_hw_support.a:regi2c_ctrl.*(.literal .text .literal.* .text.*)
     *libefuse.a:*.*(.literal .text .literal.* .text.*)
     *(.fini.literal)
     *(.fini)
@@ -58,6 +66,7 @@ SECTIONS
   .dram0.bss (NOLOAD) :
   {
     . = ALIGN (8);
+    _dram_start = ABSOLUTE(.);
     _bss_start = ABSOLUTE(.);
     *(.dynsbss)
     *(.sbss)
@@ -134,7 +143,7 @@ SECTIONS
     *(.gnu.linkonce.lit4.*)
     _lit4_end = ABSOLUTE(.);
     . = ALIGN(4);
-    _heap_start = ABSOLUTE(.);
+    _dram_end = ABSOLUTE(.);
   } >dram_seg
 
   .iram.text :

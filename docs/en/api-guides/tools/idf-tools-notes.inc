@@ -12,12 +12,22 @@
 
 ---
 
+.. tool-xtensa-esp32s3-elf-notes
+
+
+---
+
 .. tool-esp32ulp-elf-notes
 
 
 ---
 
 .. tool-esp32s2ulp-elf-notes
+
+
+---
+
+.. tool-riscv-none-embed-gcc-notes
 
 
 ---
@@ -45,6 +55,11 @@ On Linux and macOS, it is recommended to install ninja using the OS-specific pac
 ---
 
 .. tool-ccache-notes
+
+
+---
+
+.. tool-dfu-util-notes
 
 
 ---

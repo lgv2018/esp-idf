@@ -2,31 +2,33 @@
 #include <string.h>
 #include <ctype.h>
 #include <sys/random.h>
+#include <sys/socket.h>
 #include "esp_log.h"
 #include "esp_transport.h"
 #include "esp_transport_tcp.h"
 #include "esp_transport_ws.h"
 #include "esp_transport_utils.h"
-#include "mbedtls/base64.h"
-#include "mbedtls/sha1.h"
+#include "esp_transport_internal.h"
+#include "errno.h"
+#include "esp_tls_crypto.h"
 
 static const char *TAG = "TRANSPORT_WS";
 
-#define DEFAULT_WS_BUFFER (1024)
-#define WS_FIN            0x80
-#define WS_OPCODE_CONT    0x00
-#define WS_OPCODE_TEXT    0x01
-#define WS_OPCODE_BINARY  0x02
-#define WS_OPCODE_CLOSE   0x08
-#define WS_OPCODE_PING    0x09
-#define WS_OPCODE_PONG    0x0a
+#define WS_BUFFER_SIZE              CONFIG_WS_BUFFER_SIZE
+#define WS_FIN                      0x80
+#define WS_OPCODE_CONT              0x00
+#define WS_OPCODE_TEXT              0x01
+#define WS_OPCODE_BINARY            0x02
+#define WS_OPCODE_CLOSE             0x08
+#define WS_OPCODE_PING              0x09
+#define WS_OPCODE_PONG              0x0a
 
 // Second byte
-#define WS_MASK           0x80
-#define WS_SIZE16         126
-#define WS_SIZE64         127
-#define MAX_WEBSOCKET_HEADER_SIZE 16
-#define WS_RESPONSE_OK    101
+#define WS_MASK                     0x80
+#define WS_SIZE16                   126
+#define WS_SIZE64                   127
+#define MAX_WEBSOCKET_HEADER_SIZE   16
+#define WS_RESPONSE_OK              101
 
 
 typedef struct {
@@ -115,8 +117,8 @@ static int ws_connect(esp_transport_handle_t t, const char *host, int port, int 
     const char *user_agent_ptr = (ws->user_agent)?(ws->user_agent):"ESP32 Websocket Client";
 
     size_t outlen = 0;
-    mbedtls_base64_encode(client_key, sizeof(client_key), &outlen, random_key, sizeof(random_key));
-    int len = snprintf(ws->buffer, DEFAULT_WS_BUFFER,
+    esp_crypto_base64_encode(client_key, sizeof(client_key), &outlen, random_key, sizeof(random_key));
+    int len = snprintf(ws->buffer, WS_BUFFER_SIZE,
                          "GET %s HTTP/1.1\r\n"
                          "Connection: Upgrade\r\n"
                          "Host: %s:%d\r\n"
@@ -127,52 +129,52 @@ static int ws_connect(esp_transport_handle_t t, const char *host, int port, int 
                          ws->path,
                          host, port, user_agent_ptr,
                          client_key);
-    if (len <= 0 || len >= DEFAULT_WS_BUFFER) {
-        ESP_LOGE(TAG, "Error in request generation, %d", len);
+    if (len <= 0 || len >= WS_BUFFER_SIZE) {
+        ESP_LOGE(TAG, "Error in request generation, desired request len: %d, buffer size: %d", len, WS_BUFFER_SIZE);
         return -1;
     }
     if (ws->sub_protocol) {
         ESP_LOGD(TAG, "sub_protocol: %s", ws->sub_protocol);
-        int r = snprintf(ws->buffer + len, DEFAULT_WS_BUFFER - len, "Sec-WebSocket-Protocol: %s\r\n", ws->sub_protocol);
+        int r = snprintf(ws->buffer + len, WS_BUFFER_SIZE - len, "Sec-WebSocket-Protocol: %s\r\n", ws->sub_protocol);
         len += r;
-        if (r <= 0 || len >= DEFAULT_WS_BUFFER) {
+        if (r <= 0 || len >= WS_BUFFER_SIZE) {
             ESP_LOGE(TAG, "Error in request generation"
-                          "(snprintf of subprotocol returned %d, desired request len: %d, buffer size: %d", r, len, DEFAULT_WS_BUFFER);
+                          "(snprintf of subprotocol returned %d, desired request len: %d, buffer size: %d", r, len, WS_BUFFER_SIZE);
             return -1;
         }
     }
     if (ws->headers) {
         ESP_LOGD(TAG, "headers: %s", ws->headers);
-        int r = snprintf(ws->buffer + len, DEFAULT_WS_BUFFER - len, "%s", ws->headers);
+        int r = snprintf(ws->buffer + len, WS_BUFFER_SIZE - len, "%s", ws->headers);
         len += r;
-        if (r <= 0 || len >= DEFAULT_WS_BUFFER) {
+        if (r <= 0 || len >= WS_BUFFER_SIZE) {
             ESP_LOGE(TAG, "Error in request generation"
-                          "(strncpy of headers returned %d, desired request len: %d, buffer size: %d", r, len, DEFAULT_WS_BUFFER);
+                          "(strncpy of headers returned %d, desired request len: %d, buffer size: %d", r, len, WS_BUFFER_SIZE);
             return -1;
         }
     }
-    int r = snprintf(ws->buffer + len, DEFAULT_WS_BUFFER - len, "\r\n");
+    int r = snprintf(ws->buffer + len, WS_BUFFER_SIZE - len, "\r\n");
     len += r;
-    if (r <= 0 || len >= DEFAULT_WS_BUFFER) {
+    if (r <= 0 || len >= WS_BUFFER_SIZE) {
         ESP_LOGE(TAG, "Error in request generation"
-                       "(snprintf of header terminal returned %d, desired request len: %d, buffer size: %d", r, len, DEFAULT_WS_BUFFER);
+                       "(snprintf of header terminal returned %d, desired request len: %d, buffer size: %d", r, len, WS_BUFFER_SIZE);
         return -1;
     }
-    ESP_LOGD(TAG, "Write upgrate request\r\n%s", ws->buffer);
+    ESP_LOGD(TAG, "Write upgrade request\r\n%s", ws->buffer);
     if (esp_transport_write(ws->parent, ws->buffer, len, timeout_ms) <= 0) {
         ESP_LOGE(TAG, "Error write Upgrade header %s", ws->buffer);
         return -1;
     }
     int header_len = 0;
     do {
-        if ((len = esp_transport_read(ws->parent, ws->buffer + header_len, DEFAULT_WS_BUFFER - header_len, timeout_ms)) <= 0) {
+        if ((len = esp_transport_read(ws->parent, ws->buffer + header_len, WS_BUFFER_SIZE - header_len, timeout_ms)) <= 0) {
             ESP_LOGE(TAG, "Error read response for Upgrade header %s", ws->buffer);
             return -1;
         }
         header_len += len;
         ws->buffer[header_len] = '\0';
         ESP_LOGD(TAG, "Read header chunk %d, current header size: %d", len, header_len);
-    } while (NULL == strstr(ws->buffer, "\r\n\r\n") && header_len < DEFAULT_WS_BUFFER);
+    } while (NULL == strstr(ws->buffer, "\r\n\r\n") && header_len < WS_BUFFER_SIZE);
 
     char *server_key = get_http_header(ws->buffer, "Sec-WebSocket-Accept:");
     if (server_key == NULL) {
@@ -180,7 +182,7 @@ static int ws_connect(esp_transport_handle_t t, const char *host, int port, int 
         return -1;
     }
 
-    // See mbedtls_sha1_ret() arg size
+    // See esp_crypto_sha1() arg size
     unsigned char expected_server_sha1[20];
     // Size of base64 coded string see above
     unsigned char expected_server_key[33] = {0};
@@ -191,8 +193,8 @@ static int ws_connect(esp_transport_handle_t t, const char *host, int port, int 
     strcat((char*)expected_server_text, expected_server_magic);
 
     size_t key_len = strlen((char*)expected_server_text);
-    mbedtls_sha1_ret(expected_server_text, key_len, expected_server_sha1);
-    mbedtls_base64_encode(expected_server_key, sizeof(expected_server_key),  &outlen, expected_server_sha1, sizeof(expected_server_sha1));
+    esp_crypto_sha1(expected_server_text, key_len, expected_server_sha1);
+    esp_crypto_base64_encode(expected_server_key, sizeof(expected_server_key),  &outlen, expected_server_sha1, sizeof(expected_server_sha1));
     expected_server_key[ (outlen < sizeof(expected_server_key)) ? outlen : (sizeof(expected_server_key) - 1) ] = 0;
     ESP_LOGD(TAG, "server key=%s, send_key=%s, expected_server_key=%s", (char *)server_key, (char*)client_key, expected_server_key);
     if (strcmp((char*)expected_server_key, (char*)server_key) != 0) {
@@ -274,7 +276,7 @@ int esp_transport_ws_send_raw(esp_transport_handle_t t, ws_transport_opcodes_t o
         return ESP_ERR_INVALID_ARG;
     }
     ESP_LOGD(TAG, "Sending raw ws message with opcode %d", op_code);
-    return _ws_write(t, op_code | WS_FIN, WS_MASK, b, len, timeout_ms);
+    return _ws_write(t, op_code, WS_MASK, b, len, timeout_ms);
 }
 
 static int ws_write(esp_transport_handle_t t, const char *b, int len, int timeout_ms)
@@ -449,6 +451,17 @@ void esp_transport_ws_set_path(esp_transport_handle_t t, const char *path)
     strcpy(ws->path, path);
 }
 
+static int ws_get_socket(esp_transport_handle_t t)
+{
+    if (t) {
+        transport_ws_t *ws = t->data;
+        if (ws && ws->parent && ws->parent->_get_socket) {
+            return ws->parent->_get_socket(ws->parent);
+        }
+    }
+    return -1;
+}
+
 esp_transport_handle_t esp_transport_ws_init(esp_transport_handle_t parent_handle)
 {
     esp_transport_handle_t t = esp_transport_init();
@@ -461,7 +474,7 @@ esp_transport_handle_t esp_transport_ws_init(esp_transport_handle_t parent_handl
         free(ws);
         return NULL;
     });
-    ws->buffer = malloc(DEFAULT_WS_BUFFER);
+    ws->buffer = malloc(WS_BUFFER_SIZE);
     ESP_TRANSPORT_MEM_CHECK(TAG, ws->buffer, {
         free(ws->path);
         free(ws);
@@ -473,6 +486,7 @@ esp_transport_handle_t esp_transport_ws_init(esp_transport_handle_t parent_handl
     esp_transport_set_parent_transport_func(t, ws_get_payload_transport_handle);
 
     esp_transport_set_context_data(t, ws);
+    t->_get_socket = ws_get_socket;
     return t;
 }
 
@@ -548,4 +562,40 @@ int esp_transport_ws_get_read_payload_len(esp_transport_handle_t t)
     return ws->frame_state.payload_len;
 }
 
+int esp_transport_ws_poll_connection_closed(esp_transport_handle_t t, int timeout_ms)
+{
+    struct timeval timeout;
+    int sock = esp_transport_get_socket(t);
+    fd_set readset;
+    fd_set errset;
+    FD_ZERO(&readset);
+    FD_ZERO(&errset);
+    FD_SET(sock, &readset);
+    FD_SET(sock, &errset);
 
+    int ret = select(sock + 1, &readset, NULL, &errset, esp_transport_utils_ms_to_timeval(timeout_ms, &timeout));
+    if (ret > 0) {
+        if (FD_ISSET(sock, &readset)) {
+            uint8_t buffer;
+            if (recv(sock, &buffer, 1, MSG_PEEK) <= 0) {
+                // socket is readable, but reads zero bytes -- connection cleanly closed by FIN flag
+                return 1;
+            }
+            ESP_LOGW(TAG, "esp_transport_ws_poll_connection_closed: unexpected data readable on socket=%d", sock);
+        } else if (FD_ISSET(sock, &errset)) {
+            int sock_errno = 0;
+            uint32_t optlen = sizeof(sock_errno);
+            getsockopt(sock, SOL_SOCKET, SO_ERROR, &sock_errno, &optlen);
+            ESP_LOGD(TAG, "esp_transport_ws_poll_connection_closed select error %d, errno = %s, fd = %d", sock_errno, strerror(sock_errno), sock);
+            if (sock_errno == ENOTCONN || sock_errno == ECONNRESET || sock_errno == ECONNABORTED) {
+                // the three err codes above might be caused by connection termination by RTS flag
+                // which we still assume as expected closing sequence of ws-transport connection
+                return 1;
+            }
+            ESP_LOGE(TAG, "esp_transport_ws_poll_connection_closed: unexpected errno=%d on socket=%d", sock_errno, sock);
+        }
+        return -1; // indicates error: socket unexpectedly reads an actual data, or unexpected errno code
+    }
+    return ret;
+
+}

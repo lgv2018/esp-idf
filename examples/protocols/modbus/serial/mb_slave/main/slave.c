@@ -16,6 +16,9 @@
 #define MB_SLAVE_ADDR   (CONFIG_MB_SLAVE_ADDR)      // The address of device in Modbus network
 #define MB_DEV_SPEED    (CONFIG_MB_UART_BAUD_RATE)  // The communication speed of the UART
 
+// Note: Some pins on target chip cannot be assigned for UART communication.
+// Please refer to documentation for selected board and target to configure pins using Kconfig.
+
 // Defines below are used to define register start address for each type of Modbus registers
 #define MB_REG_DISCRETE_INPUT_START         (0x0000)
 #define MB_REG_INPUT_START                  (0x0000)
@@ -125,15 +128,15 @@ void app_main(void)
 
     // Starts of modbus controller and stack
     ESP_ERROR_CHECK(mbc_slave_start());
-    
+
     // Set UART pin numbers
     ESP_ERROR_CHECK(uart_set_pin(MB_PORT_NUM, CONFIG_MB_UART_TXD,
                             CONFIG_MB_UART_RXD, CONFIG_MB_UART_RTS,
                             UART_PIN_NO_CHANGE));
 
     // Set UART driver mode to Half Duplex
-    ESP_ERROR_CHECK(uart_set_mode(MB_PORT_NUM, UART_MODE_RS485_HALF_DUPLEX));  
-                                    
+    ESP_ERROR_CHECK(uart_set_mode(MB_PORT_NUM, UART_MODE_RS485_HALF_DUPLEX));
+
     ESP_LOGI(SLAVE_TAG, "Modbus slave stack initialized.");
     ESP_LOGI(SLAVE_TAG, "Start modbus test...");
 
@@ -143,6 +146,7 @@ void app_main(void)
         // Check for read/write events of Modbus master for certain events
         mb_event_group_t event = mbc_slave_check_event(MB_READ_WRITE_MASK);
         const char* rw_str = (event & MB_READ_MASK) ? "READ" : "WRITE";
+
         // Filter events and process them accordingly
         if(event & (MB_EVENT_HOLDING_REG_WR | MB_EVENT_HOLDING_REG_RD)) {
             // Get parameter information from parameter queue

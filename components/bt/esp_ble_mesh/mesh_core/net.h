@@ -10,9 +10,11 @@
 #ifndef _NET_H_
 #define _NET_H_
 
-#include "mesh_util.h"
-#include "mesh_kernel.h"
 #include "mesh_access.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 #define BLE_MESH_NET_FLAG_KR       BIT(0)
 #define BLE_MESH_NET_FLAG_IVU      BIT(1)
@@ -44,11 +46,11 @@ struct bt_mesh_app_key {
 struct bt_mesh_subnet {
     u32_t beacon_sent;        /* Timestamp of last sent beacon */
     u8_t  beacons_last;       /* Number of beacons during last
-                   * observation window
-                   */
-    u8_t  beacons_cur;        /* Number of beaconds observed during
-                   * currently ongoing window.
-                   */
+                               * observation window
+                               */
+    u8_t  beacons_cur;        /* Number of beacons observed during
+                               * currently ongoing window.
+                               */
 
     u8_t  beacon_cache[21];   /* Cached last authenticated beacon */
 
@@ -208,7 +210,10 @@ struct bt_mesh_lpn {
 
 /* bt_mesh_net.flags */
 enum {
+    BLE_MESH_NODE,            /* Device is a node */
+    BLE_MESH_PROVISIONER,     /* Device is a Provisioner */
     BLE_MESH_VALID,           /* We have been provisioned */
+    BLE_MESH_VALID_PROV,      /* Provisioner has been enabled */
     BLE_MESH_SUSPENDED,       /* Network is temporarily suspended */
     BLE_MESH_IVU_IN_PROGRESS, /* IV Update in Progress */
     BLE_MESH_IVU_INITIATOR,   /* IV Update initiated by us */
@@ -319,6 +324,8 @@ extern struct bt_mesh_net bt_mesh;
 
 #define BLE_MESH_NET_HDR_LEN 9
 
+void bt_mesh_msg_cache_clear(u16_t unicast_addr, u8_t elem_num);
+
 int bt_mesh_net_keys_create(struct bt_mesh_subnet_keys *keys,
                             const u8_t key[16]);
 
@@ -342,8 +349,8 @@ void bt_mesh_net_sec_update(struct bt_mesh_subnet *sub);
 struct bt_mesh_subnet *bt_mesh_subnet_get(u16_t net_idx);
 
 struct bt_mesh_subnet *bt_mesh_subnet_find(const u8_t net_id[8], u8_t flags,
-        u32_t iv_index, const u8_t auth[8],
-        bool *new_key);
+                                           u32_t iv_index, const u8_t auth[8],
+                                           bool *new_key);
 
 int bt_mesh_net_encode(struct bt_mesh_net_tx *tx, struct net_buf_simple *buf,
                        bool proxy);
@@ -361,11 +368,15 @@ int bt_mesh_net_decode(struct net_buf_simple *data, enum bt_mesh_net_if net_if,
 void bt_mesh_net_recv(struct net_buf_simple *data, s8_t rssi,
                       enum bt_mesh_net_if net_if);
 
+bool bt_mesh_primary_subnet_exist(void);
+
 u32_t bt_mesh_next_seq(void);
 
 void bt_mesh_net_start(void);
 
 void bt_mesh_net_init(void);
+void bt_mesh_net_deinit(void);
+
 void bt_mesh_net_header_parse(struct net_buf_simple *buf,
                               struct bt_mesh_net_rx *rx);
 
@@ -409,5 +420,9 @@ static inline void send_cb_finalize(const struct bt_mesh_send_cb *cb,
         cb->end(0, cb_data);
     }
 }
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* _NET_H_ */

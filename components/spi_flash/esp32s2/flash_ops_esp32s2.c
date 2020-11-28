@@ -20,13 +20,23 @@
 #include "soc/soc_memory_layout.h"
 #include "esp32s2/rom/spi_flash.h"
 #include "esp32s2/rom/cache.h"
+#include "bootloader_flash.h"
 #include "hal/spi_flash_hal.h"
 #include "esp_flash.h"
+#include "esp_log.h"
+
+static const char *TAG = "spiflash_s2";
+
+#define SPICACHE SPIMEM0
+#define SPIFLASH SPIMEM1
 
 esp_rom_spiflash_result_t IRAM_ATTR spi_flash_write_encrypted_chip(size_t dest_addr, const void *src, size_t size)
 {
     const spi_flash_guard_funcs_t *ops = spi_flash_guard_get();
     esp_rom_spiflash_result_t rc;
+
+    assert((dest_addr % 16) == 0);
+    assert((size % 16) == 0);
 
     if (!esp_ptr_internal(src)) {
         uint8_t block[128]; // Need to buffer in RAM as we write
@@ -48,10 +58,13 @@ esp_rom_spiflash_result_t IRAM_ATTR spi_flash_write_encrypted_chip(size_t dest_a
         return ESP_ROM_SPIFLASH_RESULT_OK;
     }
     else { // Already in internal memory
-        rc = esp_rom_spiflash_unlock();
-        if (rc != ESP_ROM_SPIFLASH_RESULT_OK) {
-            return rc;
-        }
+        ESP_LOGV(TAG, "calling SPI_Encrypt_Write addr 0x%x src %p size 0x%x", dest_addr, src, size);
+
+#ifndef CONFIG_SPI_FLASH_USE_LEGACY_IMPL
+        /* The ROM function SPI_Encrypt_Write assumes ADDR_BITLEN is already set but new
+           implementation doesn't automatically set this to a usable value */
+        SPIFLASH.user1.usr_addr_bitlen = 23;
+#endif
 
         if (ops && ops->start) {
             ops->start();
@@ -64,50 +77,22 @@ esp_rom_spiflash_result_t IRAM_ATTR spi_flash_write_encrypted_chip(size_t dest_a
     }
 }
 
-#define SPICACHE SPIMEM0
-#define SPIFLASH SPIMEM1
-#define FLASH_WRAP_CMD   0x77
 esp_err_t spi_flash_wrap_set(spi_flash_wrap_mode_t mode)
 {
-    uint32_t reg_bkp_ctrl = SPIFLASH.ctrl.val;
-    uint32_t reg_bkp_usr  = SPIFLASH.user.val;
-    SPIFLASH.user.fwrite_dio = 0;
-    SPIFLASH.user.fwrite_dual = 0;
-    SPIFLASH.user.fwrite_qio = 1;
-    SPIFLASH.user.fwrite_quad = 0;
-    SPIFLASH.ctrl.fcmd_dual = 0;
-    SPIFLASH.ctrl.fcmd_quad = 0;
-    SPIFLASH.user.usr_dummy = 0;
-    SPIFLASH.user.usr_addr = 1;
-    SPIFLASH.user.usr_command = 1;
-    SPIFLASH.user2.usr_command_bitlen = 7;
-    SPIFLASH.user2.usr_command_value = FLASH_WRAP_CMD;
-    SPIFLASH.user1.usr_addr_bitlen = 23;
-    SPIFLASH.addr = 0;
-    SPIFLASH.user.usr_miso = 0;
-    SPIFLASH.user.usr_mosi = 1;
-    SPIFLASH.mosi_dlen.usr_mosi_bit_len = 7;
-    SPIFLASH.data_buf[0] = (uint32_t) mode << 4;;
-    SPIFLASH.cmd.usr = 1;
-    while(SPIFLASH.cmd.usr != 0)
-    { }
-
-    SPIFLASH.ctrl.val = reg_bkp_ctrl;
-    SPIFLASH.user.val = reg_bkp_usr;
-    return ESP_OK;
+    return bootloader_flash_wrap_set(mode);
 }
 
 esp_err_t spi_flash_enable_wrap(uint32_t wrap_size)
 {
     switch(wrap_size) {
         case 8:
-            return spi_flash_wrap_set(FLASH_WRAP_MODE_8B);
+            return bootloader_flash_wrap_set(FLASH_WRAP_MODE_8B);
         case 16:
-            return spi_flash_wrap_set(FLASH_WRAP_MODE_16B);
+            return bootloader_flash_wrap_set(FLASH_WRAP_MODE_16B);
         case 32:
-            return spi_flash_wrap_set(FLASH_WRAP_MODE_32B);
+            return bootloader_flash_wrap_set(FLASH_WRAP_MODE_32B);
         case 64:
-            return spi_flash_wrap_set(FLASH_WRAP_MODE_64B);
+            return bootloader_flash_wrap_set(FLASH_WRAP_MODE_64B);
         default:
             return ESP_FAIL;
     }
@@ -115,7 +100,7 @@ esp_err_t spi_flash_enable_wrap(uint32_t wrap_size)
 
 void spi_flash_disable_wrap(void)
 {
-    spi_flash_wrap_set(FLASH_WRAP_MODE_DISABLE);
+    bootloader_flash_wrap_set(FLASH_WRAP_MODE_DISABLE);
 }
 
 bool spi_flash_support_wrap_size(uint32_t wrap_size)

@@ -16,15 +16,11 @@
 #include "esp_log.h"
 #include "esp_core_dump_priv.h"
 #include "esp_flash_internal.h"
-#if CONFIG_IDF_TARGET_ESP32
-#include "esp32/rom/crc.h"
-#elif CONFIG_IDF_TARGET_ESP32S2
-#include "esp32s2/rom/crc.h"
-#endif
+#include "esp_rom_crc.h"
 
 const static DRAM_ATTR char TAG[] __attribute__((unused)) = "esp_core_dump_flash";
 
-#if CONFIG_ESP32_ENABLE_COREDUMP_TO_FLASH
+#if CONFIG_ESP_COREDUMP_ENABLE_TO_FLASH
 
 typedef struct _core_dump_partition_t
 {
@@ -59,7 +55,7 @@ esp_err_t esp_core_dump_image_get(size_t* out_addr, size_t *out_size);
 
 static inline core_dump_crc_t esp_core_dump_calc_flash_config_crc(void)
 {
-    return crc32_le(0, (uint8_t const *)&s_core_flash_config.partition, sizeof(s_core_flash_config.partition));
+    return esp_rom_crc32_le(0, (uint8_t const *)&s_core_flash_config.partition, sizeof(s_core_flash_config.partition));
 }
 
 void esp_core_dump_flash_init(void)
@@ -226,7 +222,7 @@ static esp_err_t esp_core_dump_flash_write_end(void *priv)
     return err;
 }
 
-void esp_core_dump_to_flash(void *frame)
+void esp_core_dump_to_flash(panic_info_t *info)
 {
     static core_dump_write_config_t wr_cfg;
     static core_dump_write_data_t wr_data;
@@ -254,7 +250,7 @@ void esp_core_dump_to_flash(void *frame)
     wr_cfg.priv = &wr_data;
 
     ESP_COREDUMP_LOGI("Save core dump to flash...");
-    esp_core_dump_write(frame, &wr_cfg);
+    esp_core_dump_write(info, &wr_cfg);
     ESP_COREDUMP_LOGI("Core dump has been saved to flash.");
 }
 
@@ -301,7 +297,10 @@ esp_err_t esp_core_dump_image_get(size_t* out_addr, size_t *out_size)
     uint32_t *dw = (uint32_t *)core_data;
     *out_size = *dw;
     spi_flash_munmap(core_data_handle);
-    if ((*out_size < sizeof(uint32_t)) || (*out_size > core_part->size)) {
+    if (*out_size == 0xFFFFFFFF) {
+        ESP_LOGD(TAG, "Blank core dump partition!");
+        return ESP_ERR_INVALID_SIZE;
+    } else if ((*out_size < sizeof(uint32_t)) || (*out_size > core_part->size)) {
         ESP_LOGE(TAG, "Incorrect size of core dump image: %d", *out_size);
         return ESP_ERR_INVALID_SIZE;
     }
@@ -314,12 +313,12 @@ esp_err_t esp_core_dump_image_get(size_t* out_addr, size_t *out_size)
         return err;
     }
     // TODO: check CRC or SHA basing on the version of coredump image stored in flash
-#if CONFIG_ESP32_COREDUMP_CHECKSUM_CRC32
+#if CONFIG_ESP_COREDUMP_CHECKSUM_CRC32
     uint32_t *crc = (uint32_t *)(((uint8_t *)core_data) + *out_size);
     crc--; // Point to CRC field
 
     // Calculate CRC over core dump data except for CRC field
-    core_dump_crc_t cur_crc = crc32_le(0, (uint8_t const *)core_data, *out_size - sizeof(core_dump_crc_t));
+    core_dump_crc_t cur_crc = esp_rom_crc32_le(0, (uint8_t const *)core_data, *out_size - sizeof(core_dump_crc_t));
     if (*crc != cur_crc) {
         ESP_LOGD(TAG, "Core dump CRC offset 0x%x, data size: %u",
                 (uint32_t)((uint32_t)crc - (uint32_t)core_data), *out_size);
@@ -327,7 +326,7 @@ esp_err_t esp_core_dump_image_get(size_t* out_addr, size_t *out_size)
         spi_flash_munmap(core_data_handle);
         return ESP_ERR_INVALID_CRC;
     }
-#elif CONFIG_ESP32_COREDUMP_CHECKSUM_SHA256
+#elif CONFIG_ESP_COREDUMP_CHECKSUM_SHA256
     uint8_t* sha256_ptr = (uint8_t*)(((uint8_t *)core_data) + *out_size);
     sha256_ptr -= COREDUMP_SHA256_LEN;
     ESP_LOGD(TAG, "Core dump data offset, size: %d, %u!",

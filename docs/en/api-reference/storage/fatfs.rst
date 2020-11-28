@@ -29,17 +29,19 @@ Most applications use the following workflow when working with ``esp_vfs_fat_`` 
 
 4. Call the C standard library and POSIX API functions to perform such actions on files as open, read, write, erase, copy, etc. Use paths starting with the path prefix passed to :cpp:func:`esp_vfs_register` (for example, ``"/sdcard/hello.txt"``).
 
-5. Optionally, call the FatFs library functions directly. In this case, use paths without a VFS prefix (for example, ``"/hello.txt"``).
+5. Optionally, by enabling the option `CONFIG_FATFS_USE_FASTSEEK`, use the POSIX lseek function to perform it faster, the fast seek will not work for files in write mode, so to take advantage of fast seek, you should open (or close and then reopen) the file in read-only mode. 
 
-6. Close all open files.
+6. Optionally, call the FatFs library functions directly. In this case, use paths without a VFS prefix (for example, ``"/hello.txt"``).
 
-7. Call the FatFs function ``f_mount`` for the same drive number, with NULL ``FATFS*`` argument, to unmount the filesystem.
+7. Close all open files.
 
-8. Call the FatFs function :cpp:func:`ff_diskio_register` with NULL ``ff_diskio_impl_t*`` argument and the same drive number to unregister the disk I/O driver.
+8. Call the FatFs function ``f_mount`` for the same drive number, with NULL ``FATFS*`` argument, to unmount the filesystem.
 
-9. Call :cpp:func:`esp_vfs_fat_unregister_path` with the path where the file system is mounted to remove FatFs from VFS, and free the ``FATFS`` structure allocated in Step 1.
+9. Call the FatFs function :cpp:func:`ff_diskio_register` with NULL ``ff_diskio_impl_t*`` argument and the same drive number to unregister the disk I/O driver.
 
-The convenience functions ``esp_vfs_fat_sdmmc_mount`` and ``esp_vfs_fat_sdmmc_unmount`` wrap the steps described above and also handle SD card initialization. These two functions are described in the next section. 
+10. Call :cpp:func:`esp_vfs_fat_unregister_path` with the path where the file system is mounted to remove FatFs from VFS, and free the ``FATFS`` structure allocated in Step 1.
+
+The convenience functions ``esp_vfs_fat_sdmmc_mount``, ``esp_vfs_fat_sdspi_mount`` and ``esp_vfs_fat_sdcard_unmount`` wrap the steps described above and also handle SD card initialization. These two functions are described in the next section.
 
 .. doxygenfunction:: esp_vfs_fat_register
 .. doxygenfunction:: esp_vfs_fat_unregister_path
@@ -48,14 +50,15 @@ The convenience functions ``esp_vfs_fat_sdmmc_mount`` and ``esp_vfs_fat_sdmmc_un
 Using FatFs with VFS and SD cards
 ---------------------------------
 
-The header file :component_file:`fatfs/vfs/esp_vfs_fat.h` defines convenience functions :cpp:func:`esp_vfs_fat_sdmmc_mount` and :cpp:func:`esp_vfs_fat_sdmmc_unmount`. These function perform Steps 1–3 and 7–9 respectively and handle SD card initialization, but provide only limited error handling. Developers are encouraged to check its source code and incorporate more advanced features into production applications.
+The header file :component_file:`fatfs/vfs/esp_vfs_fat.h` defines convenience functions :cpp:func:`esp_vfs_fat_sdmmc_mount`, :cpp:func:`esp_vfs_fat_sdspi_mount` and :cpp:func:`esp_vfs_fat_sdcard_unmount`. These function perform Steps 1–3 and 7–9 respectively and handle SD card initialization, but provide only limited error handling. Developers are encouraged to check its source code and incorporate more advanced features into production applications.
 
 The convenience function :cpp:func:`esp_vfs_fat_sdmmc_unmount` unmounts the filesystem and releases the resources acquired by :cpp:func:`esp_vfs_fat_sdmmc_mount`.
 
 .. doxygenfunction:: esp_vfs_fat_sdmmc_mount
+.. doxygenfunction:: esp_vfs_fat_sdspi_mount
 .. doxygenstruct:: esp_vfs_fat_mount_config_t
     :members:
-.. doxygenfunction:: esp_vfs_fat_sdmmc_unmount
+.. doxygenfunction:: esp_vfs_fat_sdcard_unmount
 
 
 Using FatFs with VFS in read-only mode

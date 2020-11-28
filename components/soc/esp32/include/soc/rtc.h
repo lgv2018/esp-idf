@@ -19,6 +19,8 @@
 #include "soc/soc.h"
 #include "soc/rtc_periph.h"
 
+#define MHZ (1000000)
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -130,7 +132,7 @@ typedef enum {
  */
 typedef struct rtc_clk_config_s {
     rtc_xtal_freq_t xtal_freq : 8;      //!< Main XTAL frequency
-    rtc_cpu_freq_t cpu_freq_mhz : 10;   //!< CPU frequency to set, in MHz
+    uint32_t cpu_freq_mhz : 10;         //!< CPU frequency to set, in MHz
     rtc_fast_freq_t fast_freq : 1;      //!< RTC_FAST_CLK frequency to set
     rtc_slow_freq_t slow_freq : 2;      //!< RTC_SLOW_CLK frequency to set
     uint32_t clk_8m_div : 3;            //!< RTC 8M clock divider (division is by clk_8m_div+1, i.e. 0 means 8MHz frequency)
@@ -580,6 +582,29 @@ void rtc_sleep_set_wakeup_time(uint64_t t);
 uint32_t rtc_sleep_start(uint32_t wakeup_opt, uint32_t reject_opt);
 
 /**
+ * @brief Enter deep sleep mode
+ *
+ * Similar to rtc_sleep_start(), but additionally uses hardware to calculate the CRC value
+ * of RTC FAST memory. On wake, this CRC is used to determine if a deep sleep wake
+ * stub is valid to execute (if a wake address is set).
+ *
+ * No RAM is accessed while calculating the CRC and going into deep sleep, which makes
+ * this function safe to use even if the caller's stack is in RTC FAST memory.
+ *
+ * @note If no deep sleep wake stub address is set then calling rtc_sleep_start() will
+ * have the same effect and takes less time as CRC calculation is skipped.
+ *
+ * @note This function should only be called after rtc_sleep_init() has been called to
+ * configure the system for deep sleep.
+ *
+ * @param wakeup_opt - same as for rtc_sleep_start
+ * @param reject_opt - same as for rtc_sleep_start
+ *
+ * @return non-zero if sleep was rejected by hardware
+ */
+uint32_t rtc_deep_sleep_start(uint32_t wakeup_opt, uint32_t reject_opt);
+
+/**
  * RTC power and clock control initialization settings
  */
 typedef struct rtc_config_s {
@@ -645,7 +670,8 @@ rtc_vddsdio_config_t rtc_vddsdio_get_config(void);
  */
 void rtc_vddsdio_set_config(rtc_vddsdio_config_t config);
 
+
+
 #ifdef __cplusplus
 }
 #endif
-

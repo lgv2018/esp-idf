@@ -19,6 +19,7 @@
 #include <stdbool.h>
 #include "esp_err.h"
 #include "esp_wifi_crypto_types.h"
+#include "esp_wifi_types.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -48,7 +49,7 @@ const mesh_crypto_funcs_t g_wifi_default_mesh_crypto_funcs;
 /**
   * @brief     Supplicant initialization
   *
-  * @return    
+  * @return
   *          - ESP_OK : succeed
   *          - ESP_ERR_NO_MEM : out of memory
   */
@@ -57,12 +58,11 @@ esp_err_t esp_supplicant_init(void);
 /**
   * @brief     Supplicant deinitialization
   *
-  * @return    
+  * @return
   *          - ESP_OK : succeed
   *          - others: failed
   */
 esp_err_t esp_supplicant_deinit(void);
-
 
 /**
   * @}

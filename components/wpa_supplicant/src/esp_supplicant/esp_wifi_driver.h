@@ -40,7 +40,7 @@ enum {
     WIFI_WPA_ALG_GCMP
 };
 
-enum {
+typedef enum {
     WIFI_APPIE_PROBEREQ = 0,
     WIFI_APPIE_ASSOC_REQ,
     WIFI_APPIE_ASSOC_RESP,
@@ -53,7 +53,7 @@ enum {
     WIFI_APPIE_ESP_MANUFACTOR,
     WIFI_APPIE_COUNTRY,
     WIFI_APPIE_MAX,
-};
+} wifi_appie_t;
 
 enum {
     NONE_AUTH           = 0x01,
@@ -65,7 +65,8 @@ enum {
     WPA2_AUTH_CCKM      = 0x07,
     WPA2_AUTH_PSK_SHA256= 0x08,
     WPA3_AUTH_PSK       = 0x09,
-    WPA2_AUTH_INVALID   = 0x0a,
+    WPA2_AUTH_ENT_SHA256= 0x0a,
+    WPA2_AUTH_INVALID   = 0x0b,
 };
 
 typedef enum {
@@ -110,6 +111,7 @@ struct wpa_funcs {
     bool (*wpa_sta_init)(void);
     bool (*wpa_sta_deinit)(void);
     void (*wpa_sta_connect)(uint8_t *bssid);
+    void (*wpa_sta_disconnected_cb)(uint8_t reason_code);
     int (*wpa_sta_rx_eapol)(u8 *src_addr, u8 *buf, u32 len);
     bool (*wpa_sta_in_4way_handshake)(void);
     void *(*wpa_ap_init)(void);
@@ -123,7 +125,7 @@ struct wpa_funcs {
     int (*wpa_config_bss)(u8 *bssid);
     int (*wpa_michael_mic_failure)(u16 is_unicast);
     uint8_t *(*wpa3_build_sae_msg)(uint8_t *bssid, uint32_t type, size_t *len);
-    int (*wpa3_parse_sae_msg)(uint8_t *buf, size_t len, uint32_t type);
+    int (*wpa3_parse_sae_msg)(uint8_t *buf, size_t len, uint32_t type, uint16_t status);
 };
 
 struct wpa2_funcs {
@@ -194,6 +196,7 @@ void esp_wifi_deauthenticate_internal(u8 reason_code);
 bool esp_wifi_sta_is_running_internal(void);
 bool esp_wifi_auth_done_internal(void);
 int esp_wifi_set_ap_key_internal(int alg, const u8 *addr, int idx, u8 *key, size_t key_len);
+int esp_wifi_get_sta_hw_key_idx_internal(int key_idx);
 int esp_wifi_set_sta_key_internal(int alg, u8 *addr, int key_idx, int set_tx,
                                   u8 *seq, size_t seq_len, u8 *key, size_t key_len, int key_entry_valid);
 int  esp_wifi_get_sta_key_internal(uint8_t *ifx, int *alg, u8 *addr, int *key_idx,
@@ -232,5 +235,7 @@ esp_err_t esp_wifi_set_wps_start_flag_internal(bool start);
 uint16_t esp_wifi_sta_pmf_enabled(void);
 wifi_cipher_type_t esp_wifi_sta_get_mgmt_group_cipher(void);
 int esp_wifi_set_igtk_internal(uint8_t if_index, const wifi_wpa_igtk_t *igtk);
+esp_err_t esp_wifi_internal_issue_disconnect(uint8_t reason_code);
+bool esp_wifi_skip_supp_pmkcaching(void);
 
 #endif /* _ESP_WIFI_DRIVER_H_ */

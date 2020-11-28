@@ -14,6 +14,8 @@ entries of arbitrary lengths.
 :ref:`hooks`: ESP-IDF FreeRTOS hooks provides support for registering extra Idle and
 Tick hooks at run time. Moreover, the hooks can be asymmetric amongst both CPUs.
 
+:ref:`component-specific-properties`: Currently added only one component specific property `ORIG_INCLUDE_PATH`.
+
 
 .. _ring-buffers:
 
@@ -23,11 +25,11 @@ Ring Buffers
 The ESP-IDF FreeRTOS ring buffer is a strictly FIFO buffer that supports arbitrarily sized items.
 Ring buffers are a more memory efficient alternative to FreeRTOS queues in situations where the
 size of items is variable. The capacity of a ring buffer is not measured by the number of items
-it can store, but rather by the amount of memory used for storing items. You may apply for a
-piece of memory on the ring buffer to send an item, or just use the API to copy your data and send
-(according to the send API you call). For efficiency reasons,
+it can store, but rather by the amount of memory used for storing items. The ring buffer provides API 
+to send an item, or to allocate space for an item in the ring buffer to be filled manually by the user. 
+For efficiency reasons,
 **items are always retrieved from the ring buffer by reference**. As a result, all retrieved
-items *must also be returned* in order for them to be removed from the ring buffer completely.
+items *must also be returned* to the ring buffer by using :cpp:func:`vRingbufferReturnItem` or :cpp:func:`vRingbufferReturnItemFromISR`, in order for them to be removed from the ring buffer completely.
 The ring buffers are split into the three following types:
 
 **No-Split** buffers will guarantee that an item is stored in contiguous memory and will not
@@ -208,6 +210,9 @@ using :cpp:func:`xRingbufferReceiveUpTo` and :cpp:func:`vRingbufferReturnItem`
 For ISR safe versions of the functions used above, call :cpp:func:`xRingbufferSendFromISR`, :cpp:func:`xRingbufferReceiveFromISR`,
 :cpp:func:`xRingbufferReceiveSplitFromISR`, :cpp:func:`xRingbufferReceiveUpToFromISR`, and :cpp:func:`vRingbufferReturnItemFromISR`
 
+.. note::
+
+    Two calls to RingbufferReceive[UpTo][FromISR]() are required if the bytes wraps around the end of the ring buffer.
 
 Sending to Ring Buffer
 ^^^^^^^^^^^^^^^^^^^^^^
@@ -469,7 +474,7 @@ Ring Buffer API Reference
     of tasks using the ring buffer simultaneously is low, and the ring buffer is not operating
     near maximum capacity.
 
-.. include:: /_build/inc/ringbuf.inc
+.. include-build-file:: inc/ringbuf.inc
 
 
 .. _hooks:
@@ -501,6 +506,9 @@ and ``vApplicationTickHook()`` can only be defined once. However, the ESP32 is d
 in nature, therefore same Idle Hook and Tick Hook are used for both cores (in other words,
 the hooks are symmetrical for both cores).
 
+In a dual core system, ``vApplicationTickHook()`` must be located in IRAM (for example
+by adding the IRAM_ATTR attribute).
+
 ESP-IDF Idle and Tick Hooks
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^
 Due to the the dual core nature of the ESP32, it may be necessary for some
@@ -518,4 +526,14 @@ in turn.
 Hooks API Reference
 -------------------
 
-.. include:: /_build/inc/esp_freertos_hooks.inc
+.. include-build-file:: inc/esp_freertos_hooks.inc
+
+
+.. _component-specific-properties:
+
+Component Specific Properties
+-----------------------------
+
+Besides standart component variables that could be gotten with basic cmake build properties FreeRTOS component also provides an arguments (only one so far) for simpler integration with other modules:
+
+- `ORIG_INCLUDE_PATH` -  contains an absolute path to freertos root include folder. Thus instead of `#include "freertos/FreeRTOS.h"` you can refer to headers directly: `#include "FreeRTOS.h"`.

@@ -14,12 +14,20 @@
 
 #pragma once
 
+#include "soc/soc_caps.h"
 #include "soc/touch_sensor_channel.h"
-#include "soc/touch_sensor_caps.h"
 #include "soc/rtc_cntl_reg.h"
 #include "soc/rtc_cntl_struct.h"
 #include "soc/sens_reg.h"
 #include "soc/sens_struct.h"
 #include "soc/rtc_io_struct.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 extern const int touch_sensor_channel_io_map[SOC_TOUCH_SENSOR_NUM];
+
+#ifdef __cplusplus
+}
+#endif

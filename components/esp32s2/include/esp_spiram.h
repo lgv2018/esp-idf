@@ -20,6 +20,10 @@
 #include <stdint.h>
 #include "esp_err.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /**
  * @brief Initialize spiram interface/hardware. Normally called from cpu_start.c.
  *
@@ -41,7 +45,7 @@ void esp_spiram_init_cache(void);
 
 /**
  * @brief Memory test for SPI RAM. Should be called after SPI RAM is initialized and
- * (in case of a dual-core system) the app CPU is online. This test overwrites the 
+ * (in case of a dual-core system) the app CPU is online. This test overwrites the
  * memory with crap, so do not call after e.g. the heap allocator has stored important
  * stuff in SPI RAM.
  *
@@ -74,17 +78,8 @@ size_t esp_spiram_get_size(void);
 void esp_spiram_writeback_cache(void);
 
 
-
-/**
- * @brief Reserve a pool of internal memory for specific DMA/internal allocations
- *
- * @param size Size of reserved pool in bytes
- *
- * @return
- *          - ESP_OK on success
- *          - ESP_ERR_NO_MEM when no memory available for pool
- */
-esp_err_t esp_spiram_reserve_dma_pool(size_t size);
-
+#ifdef __cplusplus
+}
+#endif
 
 #endif

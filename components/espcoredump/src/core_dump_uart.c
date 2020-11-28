@@ -16,18 +16,17 @@
 #include "soc/gpio_periph.h"
 #include "driver/gpio.h"
 #include "esp_core_dump_priv.h"
+#include "esp_rom_sys.h"
 // TODO: move chip dependent part to portable code
 #if CONFIG_IDF_TARGET_ESP32
-#include "esp32/rom/crc.h"
 #include "esp32/clk.h"
 #elif CONFIG_IDF_TARGET_ESP32S2
-#include "esp32s2/rom/crc.h"
 #include "esp32s2/clk.h"
 #endif
 
 const static DRAM_ATTR char TAG[] __attribute__((unused)) = "esp_core_dump_uart";
 
-#if CONFIG_ESP32_ENABLE_COREDUMP_TO_UART
+#if CONFIG_ESP_COREDUMP_ENABLE_TO_UART
 
 static void esp_core_dump_b64_encode(const uint8_t *src, uint32_t src_len, uint8_t *dst) {
     const static DRAM_ATTR char b64[] =
@@ -59,7 +58,7 @@ static esp_err_t esp_core_dump_uart_write_start(void *priv)
     esp_err_t err = ESP_OK;
     core_dump_write_data_t *wr_data = (core_dump_write_data_t *)priv;
     esp_core_dump_checksum_init(wr_data);
-    ets_printf(DRAM_STR("================= CORE DUMP START =================\r\n"));
+    esp_rom_printf(DRAM_STR("================= CORE DUMP START =================\r\n"));
     return err;
 }
 
@@ -82,10 +81,10 @@ static esp_err_t esp_core_dump_uart_write_end(void *priv)
         size_t cs_len = esp_core_dump_checksum_finish(wr_data, &cs_addr);
         wr_data->off += cs_len;
         esp_core_dump_b64_encode((const uint8_t *)cs_addr, cs_len, (uint8_t*)&buf[0]);
-        ets_printf(DRAM_STR("%s\r\n"), buf);
+        esp_rom_printf(DRAM_STR("%s\r\n"), buf);
     }
-    ets_printf(DRAM_STR("================= CORE DUMP END =================\r\n"));
-#if CONFIG_ESP32_COREDUMP_CHECKSUM_SHA256
+    esp_rom_printf(DRAM_STR("================= CORE DUMP END =================\r\n"));
+#if CONFIG_ESP_COREDUMP_CHECKSUM_SHA256
     if (cs_addr) {
         esp_core_dump_print_sha256(DRAM_STR("Coredump SHA256"), (uint8_t*)(cs_addr));
     }
@@ -109,7 +108,7 @@ static esp_err_t esp_core_dump_uart_write_data(void *priv, void * data, uint32_t
         memcpy(tmp, addr, len);
         esp_core_dump_b64_encode((const uint8_t *)tmp, len, (uint8_t *)buf);
         addr += len;
-        ets_printf(DRAM_STR("%s\r\n"), buf);
+        esp_rom_printf(DRAM_STR("%s\r\n"), buf);
     }
 
     if (wr_data) {
@@ -130,7 +129,7 @@ static int esp_core_dump_uart_get_char(void) {
     return i;
 }
 
-void esp_core_dump_to_uart(XtExcFrame *frame)
+void esp_core_dump_to_uart(panic_info_t *info)
 {
     core_dump_write_config_t wr_cfg;
     core_dump_write_data_t wr_data;
@@ -153,7 +152,7 @@ void esp_core_dump_to_uart(XtExcFrame *frame)
 
     ESP_COREDUMP_LOGI("Press Enter to print core dump to UART...");
     const int cpu_ticks_per_ms = esp_clk_cpu_freq() / 1000;
-    tm_end = xthal_get_ccount() / cpu_ticks_per_ms + CONFIG_ESP32_CORE_DUMP_UART_DELAY;
+    tm_end = xthal_get_ccount() / cpu_ticks_per_ms + CONFIG_ESP_COREDUMP_UART_DELAY;
     ch = esp_core_dump_uart_get_char();
     while (!(ch == '\n' || ch == '\r')) {
         tm_cur = xthal_get_ccount() / cpu_ticks_per_ms;
@@ -163,7 +162,7 @@ void esp_core_dump_to_uart(XtExcFrame *frame)
         ch = esp_core_dump_uart_get_char();
     }
     ESP_COREDUMP_LOGI("Print core dump to uart...");
-    esp_core_dump_write((void*)frame, &wr_cfg);
+    esp_core_dump_write(info, &wr_cfg);
     ESP_COREDUMP_LOGI("Core dump has been written to uart.");
 }
 

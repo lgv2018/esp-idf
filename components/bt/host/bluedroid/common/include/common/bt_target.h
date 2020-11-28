@@ -57,6 +57,7 @@
 #define BTC_GAP_BT_INCLUDED         TRUE
 #define BTA_SDP_INCLUDED            TRUE
 #define BTA_DM_PM_INCLUDED          TRUE
+#define BTC_DM_PM_INCLUDED          TRUE
 #define SDP_INCLUDED                TRUE
 
 #if (UC_BT_A2DP_ENABLED == TRUE)
@@ -127,7 +128,18 @@
 #define BT_SSP_INCLUDED             TRUE
 #endif /* UC_BT_SSP_ENABLED */
 
+#if UC_BT_HID_HOST_ENABLED
+#define HID_HOST_INCLUDED           TRUE
+#define BTA_HH_INCLUDED             TRUE
+#endif /* UC_BT_HID_HOST_ENABLED */
+
 #endif /* UC_BT_CLASSIC_ENABLED */
+
+/* This is set to enable use of GAP L2CAP connections. */
+#if (VND_BT_JV_BTA_L2CAP == TRUE)
+#define BTA_JV_L2CAP_INCLUDED       TRUE
+#define GAP_CONN_INCLUDED           TRUE
+#endif /* VND_BT_JV_BTA_L2CAP */
 
 #ifndef CLASSIC_BT_INCLUDED
 #define CLASSIC_BT_INCLUDED         FALSE
@@ -317,6 +329,19 @@
 
 #ifndef BTA_SDP_INCLUDED
 #define BTA_SDP_INCLUDED FALSE
+#endif
+
+/* This is set to enable use of GAP L2CAP connections. */
+#ifndef VND_BT_JV_BTA_L2CAP
+#define VND_BT_JV_BTA_L2CAP        FALSE
+#endif
+
+#ifndef BTA_JV_L2CAP_INCLUDED
+#define BTA_JV_L2CAP_INCLUDED       FALSE
+#endif
+
+#ifndef GAP_CONN_INCLUDED
+#define GAP_CONN_INCLUDED           FALSE
 #endif
 
 /******************************************************************************
@@ -1375,7 +1400,7 @@
 
 /* The maximum number of ports supported. */
 #ifndef MAX_RFC_PORTS
-#define MAX_RFC_PORTS               16 /*max is 30*/
+#define MAX_RFC_PORTS               8 /*max is 30*/
 #endif
 
 /* The maximum simultaneous links to different devices. */
@@ -1742,15 +1767,6 @@ Range: 2 octets
 
 #ifndef GAP_INCLUDED
 #define GAP_INCLUDED                TRUE
-#endif
-
-/* This is set to enable use of GAP L2CAP connections. */
-#ifndef GAP_CONN_INCLUDED
-#if (GAP_INCLUDED == TRUE && CLASSIC_BT_INCLUDED == TRUE)
-#define GAP_CONN_INCLUDED           TRUE
-#else
-#define GAP_CONN_INCLUDED           FALSE
-#endif
 #endif
 
 /* This is set to enable posting event for data write */

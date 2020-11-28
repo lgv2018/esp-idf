@@ -17,9 +17,7 @@
 #include "esp_attr.h"
 #include "esp_err.h"
 #include "esp_intr_alloc.h"
-
-#include "esp32s2/rom/ets_sys.h"
-#include "esp32s2/rom/uart.h"
+#include "esp_debug_helpers.h"
 
 #include "soc/cpu.h"
 #include "soc/dport_reg.h"
@@ -31,11 +29,11 @@
 #include "freertos/task.h"
 #include "freertos/semphr.h"
 #include "freertos/queue.h"
-#include "freertos/portmacro.h"
 
 
 #define REASON_YIELD            BIT(0)
 #define REASON_FREQ_SWITCH      BIT(1)
+#define REASON_PRINT_BACKTRACE  BIT(2)
 
 static portMUX_TYPE reason_spinlock = portMUX_INITIALIZER_UNLOCKED;
 static volatile uint32_t reason;
@@ -72,6 +70,9 @@ static void IRAM_ATTR esp_crosscore_isr(void *arg) {
          * to allow DFS features without the extra latency of the ISR hook.
          */
     }
+    if (my_reason_val & REASON_PRINT_BACKTRACE) {
+        esp_backtrace_print(100);
+    }
 }
 
 //Initialize the crosscore interrupt on this core.
@@ -102,3 +103,7 @@ void IRAM_ATTR esp_crosscore_int_send_freq_switch(int core_id)
     esp_crosscore_int_send(core_id, REASON_FREQ_SWITCH);
 }
 
+void IRAM_ATTR esp_crosscore_int_send_print_backtrace(int core_id)
+{
+    esp_crosscore_int_send(core_id, REASON_PRINT_BACKTRACE);
+}

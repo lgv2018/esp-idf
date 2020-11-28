@@ -36,6 +36,7 @@
 #include "blufi_int.h"
 
 #include "esp_blufi_api.h"
+#include "esp_gatt_common_api.h"
 
 #if (GATTS_INCLUDED == TRUE)
 
@@ -287,6 +288,7 @@ static void blufi_profile_cb(tBTA_GATTS_EVT event, tBTA_GATTS *p_data)
         memcpy(blufi_env.remote_bda, p_data->conn.remote_bda, sizeof(esp_bd_addr_t));
         blufi_env.conn_id = p_data->conn.conn_id;
         blufi_env.is_connected = true;
+        blufi_env.recv_seq = blufi_env.send_seq = 0;
 
         msg.sig = BTC_SIG_API_CB;
         msg.pid = BTC_PID_BLUFI;
@@ -309,7 +311,6 @@ static void blufi_profile_cb(tBTA_GATTS_EVT event, tBTA_GATTS *p_data)
 
         memcpy(blufi_env.remote_bda, p_data->conn.remote_bda, sizeof(esp_bd_addr_t));
         blufi_env.conn_id = p_data->conn.conn_id;
-        blufi_env.is_connected = false;
         blufi_env.recv_seq = blufi_env.send_seq = 0;
         blufi_env.sec_mode = 0x0;
 
@@ -433,11 +434,19 @@ static void btc_blufi_recv_handler(uint8_t *data, int len)
             blufi_env.aggr_buf = osi_malloc(blufi_env.total_len);
             if (blufi_env.aggr_buf == NULL) {
                 BTC_TRACE_ERROR("%s no mem, len %d\n", __func__, blufi_env.total_len);
+                btc_blufi_report_error(ESP_BLUFI_DH_MALLOC_ERROR);
                 return;
             }
         }
-        memcpy(blufi_env.aggr_buf + blufi_env.offset, hdr->data + 2, hdr->data_len  - 2);
-        blufi_env.offset += (hdr->data_len - 2);
+        if (blufi_env.offset + hdr->data_len  - 2 <= blufi_env.total_len){
+            memcpy(blufi_env.aggr_buf + blufi_env.offset, hdr->data + 2, hdr->data_len  - 2);
+            blufi_env.offset += (hdr->data_len - 2);
+        } else {
+            BTC_TRACE_ERROR("%s payload is longer than packet length, len %d \n", __func__, blufi_env.total_len);
+            btc_blufi_report_error(ESP_BLUFI_DATA_FORMAT_ERROR);
+            return;
+        }
+
     } else {
         if (blufi_env.offset > 0) {   /* if previous pkt is frag */
             memcpy(blufi_env.aggr_buf + blufi_env.offset, hdr->data, hdr->data_len);
@@ -458,6 +467,11 @@ void btc_blufi_send_encap(uint8_t type, uint8_t *data, int total_data_len)
     int remain_len = total_data_len;
     uint16_t checksum;
     int ret;
+
+    if (blufi_env.is_connected == false) {
+        BTC_TRACE_ERROR("blufi connection has been disconnected \n");
+        return;
+    }
 
     while (remain_len > 0) {
         if (remain_len > blufi_env.frag_size) {
@@ -522,10 +536,17 @@ void btc_blufi_send_encap(uint8_t type, uint8_t *data, int total_data_len)
             remain_len -= hdr->data_len;
         }
 
-        btc_blufi_send_notify((uint8_t *)hdr,
+retry:
+        if (esp_ble_get_cur_sendable_packets_num(blufi_env.conn_id) > 0) {
+            btc_blufi_send_notify((uint8_t *)hdr,
                 ((hdr->fc & BLUFI_FC_CHECK) ?
                  hdr->data_len + sizeof(struct blufi_hdr) + 2 :
                  hdr->data_len + sizeof(struct blufi_hdr)));
+        } else {
+            BTC_TRACE_WARNING("%s wait to send blufi custom data\n", __func__);
+            vTaskDelay(pdMS_TO_TICKS(10));
+            goto retry;
+        }
 
         osi_free(hdr);
         hdr =  NULL;

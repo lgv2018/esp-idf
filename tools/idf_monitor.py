@@ -6,6 +6,8 @@
 # - Run flash build target to rebuild and flash entire project (Ctrl-T Ctrl-F)
 # - Run app-flash build target to rebuild and flash app only (Ctrl-T Ctrl-A)
 # - If gdbstub output is detected, gdb is automatically loaded
+# - If core dump output is detected, it is converted to a human-readable report
+#   by espcoredump.py.
 #
 # Copyright 2015-2016 Espressif Systems (Shanghai) PTE LTD
 #
@@ -54,6 +56,14 @@ import types
 from distutils.version import StrictVersion
 from io import open
 import textwrap
+import tempfile
+import json
+
+try:
+    import websocket
+except ImportError:
+    # This is needed for IDE integration only.
+    pass
 
 key_description = miniterm.key_description
 
@@ -85,17 +95,17 @@ ANSI_YELLOW = '\033[0;33m'
 ANSI_NORMAL = '\033[0m'
 
 
-def color_print(message, color):
+def color_print(message, color, newline='\n'):
     """ Print a message to stderr with colored highlighting """
-    sys.stderr.write("%s%s%s\n" % (color, message,  ANSI_NORMAL))
+    sys.stderr.write("%s%s%s%s" % (color, message,  ANSI_NORMAL, newline))
 
 
-def yellow_print(message):
-    color_print(message, ANSI_YELLOW)
+def yellow_print(message, newline='\n'):
+    color_print(message, ANSI_YELLOW, newline)
 
 
-def red_print(message):
-    color_print(message, ANSI_RED)
+def red_print(message, newline='\n'):
+    color_print(message, ANSI_RED, newline)
 
 
 __version__ = "1.1"
@@ -112,6 +122,20 @@ MATCH_PCADDR = re.compile(r'0x4[0-9a-f]{7}', re.IGNORECASE)
 DEFAULT_TOOLCHAIN_PREFIX = "xtensa-esp32-elf-"
 
 DEFAULT_PRINT_FILTER = ""
+
+# coredump related messages
+COREDUMP_UART_START = b"================= CORE DUMP START ================="
+COREDUMP_UART_END = b"================= CORE DUMP END ================="
+COREDUMP_UART_PROMPT = b"Press Enter to print core dump to UART..."
+
+# coredump states
+COREDUMP_IDLE = 0
+COREDUMP_READING = 1
+COREDUMP_DONE = 2
+
+# coredump decoding options
+COREDUMP_DECODE_DISABLE = "disable"
+COREDUMP_DECODE_INFO = "info"
 
 
 class StoppableThread(object):
@@ -355,9 +379,27 @@ class SerialReader(StoppableThread):
             self.serial.rts = True  # Force an RTS reset on open
             self.serial.open()
             self.serial.rts = False
+            self.serial.dtr = self.serial.dtr   # usbser.sys workaround
         try:
             while self.alive:
-                data = self.serial.read(self.serial.in_waiting or 1)
+                try:
+                    data = self.serial.read(self.serial.in_waiting or 1)
+                except (serial.serialutil.SerialException, IOError) as e:
+                    data = b''
+                    # self.serial.open() was successful before, therefore, this is an issue related to
+                    # the disapperence of the device
+                    red_print(e)
+                    yellow_print('Waiting for the device to reconnect', newline='')
+                    self.serial.close()
+                    while self.alive:  # so that exiting monitor works while waiting
+                        try:
+                            time.sleep(0.5)
+                            self.serial.open()
+                            break  # device connected
+                        except serial.serialutil.SerialException:
+                            yellow_print('.', newline='')
+                            sys.stderr.flush()
+                    yellow_print('')  # go to new line
                 if len(data):
                     self.event_queue.put((TAG_SERIAL, data), False)
         finally:
@@ -441,7 +483,10 @@ class Monitor(object):
 
     Main difference is that all event processing happens in the main thread, not the worker threads.
     """
-    def __init__(self, serial_instance, elf_file, print_filter, make="make", toolchain_prefix=DEFAULT_TOOLCHAIN_PREFIX, eol="CRLF"):
+    def __init__(self, serial_instance, elf_file, print_filter, make="make", encrypted=False,
+                 toolchain_prefix=DEFAULT_TOOLCHAIN_PREFIX, eol="CRLF",
+                 decode_coredumps=COREDUMP_DECODE_INFO,
+                 websocket_client=None):
         super(Monitor, self).__init__()
         self.event_queue = queue.Queue()
         self.cmd_queue = queue.Queue()
@@ -471,7 +516,9 @@ class Monitor(object):
             self.make = shlex.split(make)  # allow for possibility the "make" arg is a list of arguments (for idf.py)
         else:
             self.make = make
+        self.encrypted = encrypted
         self.toolchain_prefix = toolchain_prefix
+        self.websocket_client = websocket_client
 
         # internal state
         self._last_line_part = b""
@@ -483,6 +530,9 @@ class Monitor(object):
         self._output_enabled = True
         self._serial_check_exit = socket_mode
         self._log_file = None
+        self._decode_coredumps = decode_coredumps
+        self._reading_coredump = COREDUMP_IDLE
+        self._coredump_buffer = b""
 
     def invoke_processing_last_line(self):
         self.event_queue.put((TAG_SERIAL_FLUSH, b''), False)
@@ -552,9 +602,11 @@ class Monitor(object):
             if line != b"":
                 if self._serial_check_exit and line == self.console_parser.exit_key.encode('latin-1'):
                     raise SerialStopException()
+                self.check_coredump_trigger_before_print(line)
                 if self._force_line_print or self._line_matcher.match(line.decode(errors="ignore")):
                     self._print(line + b'\n')
                     self.handle_possible_pc_address_in_line(line)
+                self.check_coredump_trigger_after_print(line)
                 self.check_gdbstub_trigger(line)
                 self._force_line_print = False
         # Now we have the last part (incomplete line) in _last_line_part. By
@@ -623,7 +675,7 @@ class Monitor(object):
             else:
                 popen_args = [self.make, target]
             yellow_print("Running %s..." % " ".join(popen_args))
-            p = subprocess.Popen(popen_args)
+            p = subprocess.Popen(popen_args, env=os.environ)
             try:
                 p.wait()
             except KeyboardInterrupt:
@@ -654,9 +706,105 @@ class Monitor(object):
             except ValueError:
                 return  # payload wasn't valid hex digits
             if chsum == calc_chsum:
-                self.run_gdb()
+                if self.websocket_client:
+                    yellow_print('Communicating through WebSocket')
+                    self.websocket_client.send({'event': 'gdb_stub',
+                                                'port': self.serial.port,
+                                                'prog': self.elf_file})
+                    yellow_print('Waiting for debug finished event')
+                    self.websocket_client.wait([('event', 'debug_finished')])
+                    yellow_print('Communications through WebSocket is finished')
+                else:
+                    self.run_gdb()
             else:
                 red_print("Malformed gdb message... calculated checksum %02x received %02x" % (chsum, calc_chsum))
+
+    def check_coredump_trigger_before_print(self, line):
+        if self._decode_coredumps == COREDUMP_DECODE_DISABLE:
+            return
+
+        if COREDUMP_UART_PROMPT in line:
+            yellow_print("Initiating core dump!")
+            self.event_queue.put((TAG_KEY, '\n'))
+            return
+
+        if COREDUMP_UART_START in line:
+            yellow_print("Core dump started (further output muted)")
+            self._reading_coredump = COREDUMP_READING
+            self._coredump_buffer = b""
+            self._output_enabled = False
+            return
+
+        if COREDUMP_UART_END in line:
+            self._reading_coredump = COREDUMP_DONE
+            yellow_print("\nCore dump finished!")
+            self.process_coredump()
+            return
+
+        if self._reading_coredump == COREDUMP_READING:
+            kb = 1024
+            buffer_len_kb = len(self._coredump_buffer) // kb
+            self._coredump_buffer += line.replace(b'\r', b'') + b'\n'
+            new_buffer_len_kb = len(self._coredump_buffer) // kb
+            if new_buffer_len_kb > buffer_len_kb:
+                yellow_print("Received %3d kB..." % (new_buffer_len_kb), newline='\r')
+
+    def check_coredump_trigger_after_print(self, line):
+        if self._decode_coredumps == COREDUMP_DECODE_DISABLE:
+            return
+
+        # Re-enable output after the last line of core dump has been consumed
+        if not self._output_enabled and self._reading_coredump == COREDUMP_DONE:
+            self._reading_coredump = COREDUMP_IDLE
+            self._output_enabled = True
+            self._coredump_buffer = b""
+
+    def process_coredump(self):
+        if self._decode_coredumps != COREDUMP_DECODE_INFO:
+            raise NotImplementedError("process_coredump: %s not implemented" % self._decode_coredumps)
+
+        coredump_script = os.path.join(os.path.dirname(__file__), "..", "components", "espcoredump", "espcoredump.py")
+        coredump_file = None
+        try:
+            # On Windows, the temporary file can't be read unless it is closed.
+            # Set delete=False and delete the file manually later.
+            with tempfile.NamedTemporaryFile(mode="wb", delete=False) as coredump_file:
+                coredump_file.write(self._coredump_buffer)
+                coredump_file.flush()
+
+            if self.websocket_client:
+                self._output_enabled = True
+                yellow_print('Communicating through WebSocket')
+                self.websocket_client.send({'event': 'coredump',
+                                            'file': coredump_file.name,
+                                            'prog': self.elf_file})
+                yellow_print('Waiting for debug finished event')
+                self.websocket_client.wait([('event', 'debug_finished')])
+                yellow_print('Communications through WebSocket is finished')
+            else:
+                cmd = [sys.executable,
+                       coredump_script,
+                       "info_corefile",
+                       "--core", coredump_file.name,
+                       "--core-format", "b64",
+                       self.elf_file
+                       ]
+                output = subprocess.check_output(cmd, stderr=subprocess.STDOUT)
+                self._output_enabled = True
+                self._print(output)
+                self._output_enabled = False  # Will be reenabled in check_coredump_trigger_after_print
+        except subprocess.CalledProcessError as e:
+            yellow_print("Failed to run espcoredump script: {}\n{}\n\n".format(e, e.output))
+            self._output_enabled = True
+            self._print(COREDUMP_UART_START + b'\n')
+            self._print(self._coredump_buffer)
+            # end line will be printed in handle_serial_input
+        finally:
+            if coredump_file is not None:
+                try:
+                    os.unlink(coredump_file.name)
+                except OSError as e:
+                    yellow_print("Couldn't remote temporary core dump file ({})".format(e))
 
     def run_gdb(self):
         with self:  # disable console control
@@ -741,13 +889,15 @@ class Monitor(object):
             self.serial_reader.stop()
         elif cmd == CMD_RESET:
             self.serial.setRTS(True)
+            self.serial.setDTR(self.serial.dtr)  # usbser.sys workaround
             time.sleep(0.2)
             self.serial.setRTS(False)
+            self.serial.setDTR(self.serial.dtr)  # usbser.sys workaround
             self.output_enable(True)
         elif cmd == CMD_MAKE:
-            self.run_make("flash")
+            self.run_make("encrypted-flash" if self.encrypted else "flash")
         elif cmd == CMD_APP_FLASH:
-            self.run_make("app-flash")
+            self.run_make("encrypted-app-flash" if self.encrypted else "app-flash")
         elif cmd == CMD_OUTPUT_TOGGLE:
             self.output_toggle()
         elif cmd == CMD_TOGGLE_LOGGING:
@@ -755,9 +905,11 @@ class Monitor(object):
         elif cmd == CMD_ENTER_BOOT:
             self.serial.setDTR(False)  # IO0=HIGH
             self.serial.setRTS(True)   # EN=LOW, chip in reset
+            self.serial.setDTR(self.serial.dtr)  # usbser.sys workaround
             time.sleep(1.3)  # timeouts taken from esptool.py, includes esp32r0 workaround. defaults: 0.1
             self.serial.setDTR(True)   # IO0=LOW
             self.serial.setRTS(False)  # EN=HIGH, chip out of reset
+            self.serial.setDTR(self.serial.dtr)  # usbser.sys workaround
             time.sleep(0.45)  # timeouts taken from esptool.py, includes esp32r0 workaround. defaults: 0.05
             self.serial.setDTR(False)  # IO0=HIGH, done
         else:
@@ -789,12 +941,17 @@ def main():
         '--baud', '-b',
         help='Serial port baud rate',
         type=int,
-        default=os.environ.get('MONITOR_BAUD', 115200))
+        default=os.getenv('IDF_MONITOR_BAUD', os.getenv('MONITORBAUD', 115200)))
 
     parser.add_argument(
         '--make', '-m',
         help='Command to run make',
         type=str, default='make')
+
+    parser.add_argument(
+        '--encrypted',
+        help='Use encrypted targets while running make',
+        action='store_true')
 
     parser.add_argument(
         '--toolchain-prefix',
@@ -817,9 +974,28 @@ def main():
         help="Filtering string",
         default=DEFAULT_PRINT_FILTER)
 
+    parser.add_argument(
+        '--decode-coredumps',
+        choices=[COREDUMP_DECODE_INFO, COREDUMP_DECODE_DISABLE],
+        default=COREDUMP_DECODE_INFO,
+        help="Handling of core dumps found in serial output"
+    )
+
+    parser.add_argument(
+        '--ws',
+        default=os.environ.get('ESP_IDF_MONITOR_WS', None),
+        help="WebSocket URL for communicating with IDE tools for debugging purposes"
+    )
+
     args = parser.parse_args()
 
-    if args.port.startswith("/dev/tty."):
+    # GDB uses CreateFile to open COM port, which requires the COM name to be r'\\.\COMx' if the COM
+    # number is larger than 10
+    if os.name == 'nt' and args.port.startswith("COM"):
+        args.port = args.port.replace('COM', r'\\.\COM')
+        yellow_print("--- WARNING: GDB cannot open serial ports accessed as COMx")
+        yellow_print("--- Using %s instead..." % args.port)
+    elif args.port.startswith("/dev/tty.") and sys.platform == 'darwin':
         args.port = args.port.replace("/dev/tty.", "/dev/cu.")
         yellow_print("--- WARNING: Serial ports accessed as /dev/tty.* will hang gdb if launched.")
         yellow_print("--- Using %s instead..." % args.port)
@@ -842,19 +1018,119 @@ def main():
     except KeyError:
         pass  # not running a make jobserver
 
-    monitor = Monitor(serial_instance, args.elf_file.name, args.print_filter, args.make, args.toolchain_prefix, args.eol)
+    # Pass the actual used port to callee of idf_monitor (e.g. make) through `ESPPORT` environment
+    # variable
+    # To make sure the key as well as the value are str type, by the requirements of subprocess
+    espport_key = str("ESPPORT")
+    espport_val = str(args.port)
+    os.environ.update({espport_key: espport_val})
 
-    yellow_print('--- idf_monitor on {p.name} {p.baudrate} ---'.format(
-        p=serial_instance))
-    yellow_print('--- Quit: {} | Menu: {} | Help: {} followed by {} ---'.format(
-        key_description(monitor.console_parser.exit_key),
-        key_description(monitor.console_parser.menu_key),
-        key_description(monitor.console_parser.menu_key),
-        key_description(CTRL_H)))
-    if args.print_filter != DEFAULT_PRINT_FILTER:
-        yellow_print('--- Print filter: {} ---'.format(args.print_filter))
+    ws = WebSocketClient(args.ws) if args.ws else None
+    try:
+        monitor = Monitor(serial_instance, args.elf_file.name, args.print_filter, args.make, args.encrypted,
+                          args.toolchain_prefix, args.eol,
+                          args.decode_coredumps,
+                          ws)
 
-    monitor.main_loop()
+        yellow_print('--- idf_monitor on {p.name} {p.baudrate} ---'.format(
+            p=serial_instance))
+        yellow_print('--- Quit: {} | Menu: {} | Help: {} followed by {} ---'.format(
+            key_description(monitor.console_parser.exit_key),
+            key_description(monitor.console_parser.menu_key),
+            key_description(monitor.console_parser.menu_key),
+            key_description(CTRL_H)))
+        if args.print_filter != DEFAULT_PRINT_FILTER:
+            yellow_print('--- Print filter: {} ---'.format(args.print_filter))
+
+        monitor.main_loop()
+    finally:
+        if ws:
+            ws.close()
+
+
+class WebSocketClient(object):
+    """
+    WebSocket client used to advertise debug events to WebSocket server by sending and receiving JSON-serialized
+    dictionaries.
+
+    Advertisement of debug event:
+    {'event': 'gdb_stub', 'port': '/dev/ttyUSB1', 'prog': 'build/elf_file'} for GDB Stub, or
+    {'event': 'coredump', 'file': '/tmp/xy', 'prog': 'build/elf_file'} for coredump,
+    where 'port' is the port for the connected device, 'prog' is the full path to the ELF file and 'file' is the
+    generated coredump file.
+
+    Expected end of external debugging:
+    {'event': 'debug_finished'}
+    """
+
+    RETRIES = 3
+    CONNECTION_RETRY_DELAY = 1
+
+    def __init__(self, url):
+        self.url = url
+        self._connect()
+
+    def _connect(self):
+        """
+        Connect to WebSocket server at url
+        """
+        self.close()
+
+        for _ in range(self.RETRIES):
+            try:
+                self.ws = websocket.create_connection(self.url)
+                break  # success
+            except NameError:
+                raise RuntimeError('Please install the websocket_client package for IDE integration!')
+            except Exception as e:
+                red_print('WebSocket connection error: {}'.format(e))
+            time.sleep(self.CONNECTION_RETRY_DELAY)
+        else:
+            raise RuntimeError('Cannot connect to WebSocket server')
+
+    def close(self):
+        try:
+            self.ws.close()
+        except AttributeError:
+            # Not yet connected
+            pass
+        except Exception as e:
+            red_print('WebSocket close error: {}'.format(e))
+
+    def send(self, payload_dict):
+        """
+        Serialize payload_dict in JSON format and send it to the server
+        """
+        for _ in range(self.RETRIES):
+            try:
+                self.ws.send(json.dumps(payload_dict))
+                yellow_print('WebSocket sent: {}'.format(payload_dict))
+                break
+            except Exception as e:
+                red_print('WebSocket send error: {}'.format(e))
+                self._connect()
+        else:
+            raise RuntimeError('Cannot send to WebSocket server')
+
+    def wait(self, expect_iterable):
+        """
+        Wait until a dictionary in JSON format is received from the server with all (key, value) tuples from
+        expect_iterable.
+        """
+        for _ in range(self.RETRIES):
+            try:
+                r = self.ws.recv()
+            except Exception as e:
+                red_print('WebSocket receive error: {}'.format(e))
+                self._connect()
+                continue
+            obj = json.loads(r)
+            if all([k in obj and obj[k] == v for k, v in expect_iterable]):
+                yellow_print('WebSocket received: {}'.format(obj))
+                break
+            red_print('WebSocket expected: {}, received: {}'.format(dict(expect_iterable), obj))
+        else:
+            raise RuntimeError('Cannot receive from WebSocket server')
 
 
 if os.name == 'nt':

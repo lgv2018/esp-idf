@@ -34,6 +34,8 @@ from idf_http_server_test import test as client
 # of large HTTP packets and malformed requests, running multiple parallel sessions, etc.
 # It is advised that all these tests be run locally, when making changes or adding new
 # features to this component.
+
+
 @ttfw_idf.idf_example_test(env_tag="Example_WIFI")
 def test_examples_protocol_http_server_advanced(env, extra_data):
     # Acquire DUT
@@ -43,7 +45,7 @@ def test_examples_protocol_http_server_advanced(env, extra_data):
     binary_file = os.path.join(dut1.app.binary_path, "tests.bin")
     bin_size = os.path.getsize(binary_file)
     ttfw_idf.log_performance("http_server_bin_size", "{}KB".format(bin_size // 1024))
-    ttfw_idf.check_performance("http_server_bin_size", bin_size // 1024)
+    ttfw_idf.check_performance("http_server_bin_size", bin_size // 1024, dut1.TARGET)
 
     # Upload binary and start testing
     Utility.console_log("Starting http_server advanced test app")

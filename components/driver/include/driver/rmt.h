@@ -21,18 +21,24 @@ extern "C" {
 #include <stdbool.h>
 #include <stdint.h>
 #include "esp_err.h"
+#include "soc/soc_caps.h"
 #include "driver/gpio.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/ringbuf.h"
-#include "soc/rmt_caps.h"
 #include "soc/rmt_struct.h"
 #include "hal/rmt_types.h"
+
+#define RMT_CHANNEL_FLAGS_AWARE_DFS (1 << 0) /*!< Channel can work during APB clock scaling */
+
+/** @cond */
+#define RMT_CHANNEL_FLAGS_ALWAYS_ON RMT_CHANNEL_FLAGS_AWARE_DFS  /*!< Deprecated name, defined here for compatibility */
+/** @endcond */
 
 /**
  * @brief Define memory space of each RMT channel (in words = 4 bytes)
  *
  */
-#define RMT_MEM_ITEM_NUM RMT_CHANNEL_MEM_WORDS
+#define RMT_MEM_ITEM_NUM SOC_RMT_CHANNEL_MEM_WORDS
 
 /**
 * @brief Data struct of RMT TX configure parameters
@@ -42,6 +48,9 @@ typedef struct {
     rmt_carrier_level_t carrier_level; /*!< Level of the RMT output, when the carrier is applied */
     rmt_idle_level_t idle_level;       /*!< RMT idle level */
     uint8_t carrier_duty_percent;      /*!< RMT carrier duty (%) */
+#if SOC_RMT_SUPPORT_TX_LOOP_COUNT
+    uint32_t loop_count;               /*!< Maximum loop count */
+#endif
     bool carrier_en;                   /*!< RMT carrier enable */
     bool loop_en;                      /*!< Enable sending RMT items in a loop */
     bool idle_output_en;               /*!< RMT idle level output enable */
@@ -54,6 +63,12 @@ typedef struct {
     uint16_t idle_threshold;     /*!< RMT RX idle threshold */
     uint8_t filter_ticks_thresh; /*!< RMT filter tick number */
     bool filter_en;              /*!< RMT receiver filter enable */
+#if SOC_RMT_SUPPORT_RX_DEMODULATION
+    bool rm_carrier;                   /*!< RMT receiver remove carrier enable */
+    uint32_t carrier_freq_hz;          /*!< RMT carrier frequency */
+    uint8_t carrier_duty_percent;      /*!< RMT carrier duty (%) */
+    rmt_carrier_level_t carrier_level; /*!< The level to remove the carrier */
+#endif
 } rmt_rx_config_t;
 
 /**
@@ -65,6 +80,7 @@ typedef struct {
     gpio_num_t gpio_num;   /*!< RMT GPIO number */
     uint8_t clk_div;       /*!< RMT channel counter divider */
     uint8_t mem_block_num; /*!< RMT memory block number */
+    uint32_t flags;        /*!< RMT channel extra configurations, OR'd with RMT_CHANNEL_FLAGS_[*] */
     union {
         rmt_tx_config_t tx_config; /*!< RMT TX parameter */
         rmt_rx_config_t rx_config; /*!< RMT RX parameter */
@@ -82,6 +98,7 @@ typedef struct {
         .gpio_num = gpio,                            \
         .clk_div = 80,                               \
         .mem_block_num = 1,                          \
+        .flags = 0,                                  \
         .tx_config = {                               \
             .carrier_freq_hz = 38000,                \
             .carrier_level = RMT_CARRIER_LEVEL_HIGH, \
@@ -104,6 +121,7 @@ typedef struct {
         .gpio_num = gpio,                       \
         .clk_div = 80,                          \
         .mem_block_num = 1,                     \
+        .flags = 0,                             \
         .rx_config = {                          \
             .idle_threshold = 12000,            \
             .filter_ticks_thresh = 100,         \
@@ -343,7 +361,7 @@ esp_err_t rmt_rx_start(rmt_channel_t channel, bool rx_idx_rst);
 esp_err_t rmt_rx_stop(rmt_channel_t channel);
 
 /**
-* @brief Reset RMT TX/RX memory index.
+* @brief Reset RMT TX memory
 *
 * @param channel RMT channel
 *
@@ -351,7 +369,18 @@ esp_err_t rmt_rx_stop(rmt_channel_t channel);
 *     - ESP_ERR_INVALID_ARG Parameter error
 *     - ESP_OK Success
 */
-esp_err_t rmt_memory_rw_rst(rmt_channel_t channel);
+esp_err_t rmt_tx_memory_reset(rmt_channel_t channel);
+
+/**
+* @brief Reset RMT RX memory
+*
+* @param channel RMT channel
+*
+* @return
+*     - ESP_ERR_INVALID_ARG Parameter error
+*     - ESP_OK Success
+*/
+esp_err_t rmt_rx_memory_reset(rmt_channel_t channel);
 
 /**
 * @brief Set RMT memory owner.
@@ -489,22 +518,6 @@ esp_err_t rmt_get_idle_level(rmt_channel_t channel, bool *idle_out_en, rmt_idle_
 *     - ESP_OK Success
 */
 esp_err_t rmt_get_status(rmt_channel_t channel, uint32_t *status);
-
-/**
-* @brief Set mask value to RMT interrupt enable register.
-*
-* @param mask Bit mask to set to the register
-*
-*/
-void rmt_set_intr_enable_mask(uint32_t mask);
-
-/**
-* @brief Clear mask value to RMT interrupt enable register.
-*
-* @param mask Bit mask to clear the register
-*
-*/
-void rmt_clr_intr_enable_mask(uint32_t mask);
 
 /**
 * @brief Set RMT RX interrupt enable
@@ -777,6 +790,77 @@ esp_err_t rmt_write_sample(rmt_channel_t channel, const uint8_t *src, size_t src
 * @return the previous callback settings (members will be set to NULL if there was none)
 */
 rmt_tx_end_callback_t rmt_register_tx_end_callback(rmt_tx_end_fn_t function, void *arg);
+
+#if SOC_RMT_SUPPORT_RX_PINGPONG
+/**
+* @brief Set RMT RX threshold event interrupt enable
+*
+* An interrupt will be triggered when the number of received items reaches the threshold value
+*
+* @param channel RMT channel
+* @param en enable or disable RX event interrupt.
+* @param evt_thresh RMT event interrupt threshold value
+*
+* @return
+*     - ESP_ERR_INVALID_ARG Parameter error
+*     - ESP_OK Success
+*/
+esp_err_t rmt_set_rx_thr_intr_en(rmt_channel_t channel, bool en, uint16_t evt_thresh);
+#endif
+
+#if SOC_RMT_SUPPORT_TX_GROUP
+/**
+* @brief Add channel into a group (channels in the same group will transmit simultaneously)
+*
+* @param channel RMT channel
+*
+* @return
+*     - ESP_ERR_INVALID_ARG Parameter error
+*     - ESP_OK Success
+*/
+esp_err_t rmt_add_channel_to_group(rmt_channel_t channel);
+
+/**
+* @brief Remove channel out of a group
+*
+* @param channel RMT channel
+*
+* @return
+*     - ESP_ERR_INVALID_ARG Parameter error
+*     - ESP_OK Success
+*/
+esp_err_t rmt_remove_channel_from_group(rmt_channel_t channel);
+#endif
+
+/**
+* @brief Reset RMT TX/RX memory index.
+*
+* @param channel RMT channel
+*
+* @return
+*     - ESP_ERR_INVALID_ARG Parameter error
+*     - ESP_OK Success
+*/
+esp_err_t rmt_memory_rw_rst(rmt_channel_t channel)
+__attribute__((deprecated("use rmt_tx_memory_reset or rmt_rx_memory_reset instead")));
+
+/**
+* @brief Set mask value to RMT interrupt enable register.
+*
+* @param mask Bit mask to set to the register
+*
+*/
+void rmt_set_intr_enable_mask(uint32_t mask)
+__attribute__((deprecated("interrupt should be handled by driver")));
+
+/**
+* @brief Clear mask value to RMT interrupt enable register.
+*
+* @param mask Bit mask to clear the register
+*
+*/
+void rmt_clr_intr_enable_mask(uint32_t mask)
+__attribute__((deprecated("interrupt should be handled by driver")));
 
 #ifdef __cplusplus
 }

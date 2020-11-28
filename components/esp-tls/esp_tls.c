@@ -60,6 +60,10 @@ static const char *TAG = "esp-tls";
 #define _esp_tls_read                       esp_wolfssl_read
 #define _esp_tls_write                      esp_wolfssl_write
 #define _esp_tls_conn_delete                esp_wolfssl_conn_delete
+#ifdef CONFIG_ESP_TLS_SERVER
+#define _esp_tls_server_session_create      esp_wolfssl_server_session_create
+#define _esp_tls_server_session_delete      esp_wolfssl_server_session_delete
+#endif  /* CONFIG_ESP_TLS_SERVER */
 #define _esp_tls_get_bytes_avail            esp_wolfssl_get_bytes_avail
 #define _esp_tls_init_global_ca_store       esp_wolfssl_init_global_ca_store
 #define _esp_tls_set_global_ca_store        esp_wolfssl_set_global_ca_store                 /*!< Callback function for setting global CA store data for TLS/SSL */
@@ -93,14 +97,22 @@ static ssize_t tcp_write(esp_tls_t *tls, const char *data, size_t datalen)
  */
 void esp_tls_conn_delete(esp_tls_t *tls)
 {
+    esp_tls_conn_destroy(tls);
+}
+
+int esp_tls_conn_destroy(esp_tls_t *tls)
+{
     if (tls != NULL) {
+        int ret = 0;
         _esp_tls_conn_delete(tls);
         if (tls->sockfd >= 0) {
-            close(tls->sockfd);
+            ret = close(tls->sockfd);
         }
-    free(tls->error_handle);
-    free(tls);
+        esp_tls_internal_event_tracker_destroy(tls->error_handle);
+        free(tls);
+        return ret;
     }
+    return -1; // invalid argument
 }
 
 esp_tls_t *esp_tls_init(void)
@@ -109,7 +121,7 @@ esp_tls_t *esp_tls_init(void)
     if (!tls) {
         return NULL;
     }
-    tls->error_handle = calloc(1, sizeof(esp_tls_last_error_t));
+    tls->error_handle = esp_tls_internal_event_tracker_create();
     if (!tls->error_handle) {
         free(tls);
         return NULL;
@@ -160,7 +172,7 @@ static esp_err_t esp_tcp_connect(const char *host, int hostlen, int port, int *s
     int fd = socket(addrinfo->ai_family, addrinfo->ai_socktype, addrinfo->ai_protocol);
     if (fd < 0) {
         ESP_LOGE(TAG, "Failed to create socket (family %d socktype %d protocol %d)", addrinfo->ai_family, addrinfo->ai_socktype, addrinfo->ai_protocol);
-        ESP_INT_EVENT_TRACKER_CAPTURE(tls->error_handle, ERR_TYPE_SYSTEM, errno);
+        ESP_INT_EVENT_TRACKER_CAPTURE(tls->error_handle, ESP_TLS_ERR_TYPE_SYSTEM, errno);
         ret = ESP_ERR_ESP_TLS_CANNOT_CREATE_SOCKET;
         goto err_freeaddr;
     }
@@ -202,7 +214,7 @@ static esp_err_t esp_tcp_connect(const char *host, int hostlen, int port, int *s
     if (ret < 0 && !(errno == EINPROGRESS && cfg && cfg->non_block)) {
 
         ESP_LOGE(TAG, "Failed to connnect to host (errno %d)", errno);
-        ESP_INT_EVENT_TRACKER_CAPTURE(tls->error_handle, ERR_TYPE_SYSTEM, errno);
+        ESP_INT_EVENT_TRACKER_CAPTURE(tls->error_handle, ESP_TLS_ERR_TYPE_SYSTEM, errno);
         ret = ESP_ERR_ESP_TLS_FAILED_CONNECT_TO_HOST;
         goto err_freesocket;
     }
@@ -237,7 +249,7 @@ static int esp_tls_low_level_conn(const char *hostname, int hostlen, int port, c
             tls->is_tls = true;
         }
         if ((esp_ret = esp_tcp_connect(hostname, hostlen, port, &tls->sockfd, tls, cfg)) != ESP_OK) {
-            ESP_INT_EVENT_TRACKER_CAPTURE(tls->error_handle, ERR_TYPE_ESP, esp_ret);
+            ESP_INT_EVENT_TRACKER_CAPTURE(tls->error_handle, ESP_TLS_ERR_TYPE_ESP, esp_ret);
             return -1;
         }
         if (!cfg) {
@@ -268,12 +280,12 @@ static int esp_tls_low_level_conn(const char *hostname, int hostlen, int port, c
             }
             if (FD_ISSET(tls->sockfd, &tls->rset) || FD_ISSET(tls->sockfd, &tls->wset)) {
                 int error;
-                unsigned int len = sizeof(error);
+                socklen_t len = sizeof(error);
                 /* pending error check */
                 if (getsockopt(tls->sockfd, SOL_SOCKET, SO_ERROR, &error, &len) < 0) {
                     ESP_LOGD(TAG, "Non blocking connect failed");
-                    ESP_INT_EVENT_TRACKER_CAPTURE(tls->error_handle, ERR_TYPE_SYSTEM, errno);
-                    ESP_INT_EVENT_TRACKER_CAPTURE(tls->error_handle, ERR_TYPE_ESP, ESP_ERR_ESP_TLS_SOCKET_SETOPT_FAILED);
+                    ESP_INT_EVENT_TRACKER_CAPTURE(tls->error_handle, ESP_TLS_ERR_TYPE_SYSTEM, errno);
+                    ESP_INT_EVENT_TRACKER_CAPTURE(tls->error_handle, ESP_TLS_ERR_TYPE_ESP, ESP_ERR_ESP_TLS_SOCKET_SETOPT_FAILED);
                     tls->conn_state = ESP_TLS_FAIL;
                     return -1;
                 }
@@ -283,7 +295,7 @@ static int esp_tls_low_level_conn(const char *hostname, int hostlen, int port, c
         esp_ret = create_ssl_handle(hostname, hostlen, cfg, tls);
         if (esp_ret != ESP_OK) {
             ESP_LOGE(TAG, "create_ssl_handle failed");
-            ESP_INT_EVENT_TRACKER_CAPTURE(tls->error_handle, ERR_TYPE_ESP, esp_ret);
+            ESP_INT_EVENT_TRACKER_CAPTURE(tls->error_handle, ESP_TLS_ERR_TYPE_ESP, esp_ret);
             tls->conn_state = ESP_TLS_FAIL;
             return -1;
         }
@@ -355,7 +367,7 @@ int esp_tls_conn_new_sync(const char *hostname, int hostlen, int port, const esp
             uint32_t expired = xTaskGetTickCount() - start;
             if (expired >= timeout_ticks) {
                 ESP_LOGW(TAG, "Failed to open new connection in specified timeout");
-                ESP_INT_EVENT_TRACKER_CAPTURE(tls->error_handle, ERR_TYPE_ESP, ESP_ERR_ESP_TLS_CONNECTION_TIMEOUT);
+                ESP_INT_EVENT_TRACKER_CAPTURE(tls->error_handle, ESP_TLS_ERR_TYPE_ESP, ESP_ERR_ESP_TLS_CONNECTION_TIMEOUT);
                 return 0;
             }
         }
@@ -429,6 +441,7 @@ mbedtls_x509_crt *esp_tls_get_global_ca_store(void)
     return _esp_tls_get_global_ca_store();
 }
 
+#endif /* CONFIG_ESP_TLS_USING_MBEDTLS */
 #ifdef CONFIG_ESP_TLS_SERVER
 /**
  * @brief      Create a server side TLS/SSL connection
@@ -445,7 +458,6 @@ void esp_tls_server_session_delete(esp_tls_t *tls)
     return _esp_tls_server_session_delete(tls);
 }
 #endif /* CONFIG_ESP_TLS_SERVER */
-#endif /* CONFIG_ESP_TLS_USING_MBEDTLS */
 
 ssize_t esp_tls_get_bytes_avail(esp_tls_t *tls)
 {

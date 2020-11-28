@@ -31,6 +31,7 @@ from pyparsing import Optional
 from pyparsing import originalTextFor
 from pyparsing import Forward
 from pyparsing import indentedBlock
+from pyparsing import Combine
 from collections import namedtuple
 import abc
 
@@ -107,7 +108,7 @@ class FragmentFile():
             try:
                 parse_ctx.fragment.set_key_value(parse_ctx.key, stmts)
             except Exception as e:
-                raise ParseFatalException(pstr, loc, "unable to add key '%s'; %s" % (parse_ctx.key, e.message))
+                raise ParseFatalException(pstr, loc, "unable to add key '%s'; %s" % (parse_ctx.key, str(e)))
             return None
 
         key = Word(alphanums + "_") + Suppress(":")
@@ -139,7 +140,7 @@ class FragmentFile():
             except KeyError:
                 raise ParseFatalException(pstr, loc, "key '%s' is not supported by fragment" % key)
             except Exception as e:
-                raise ParseFatalException(pstr, loc, "unable to parse key '%s'; %s" % (key, e.message))
+                raise ParseFatalException(pstr, loc, "unable to parse key '%s'; %s" % (key, str(e)))
 
             key_stmt << (conditional | Group(key_grammar).setResultsName("value"))
 
@@ -216,8 +217,14 @@ class Fragment():
 
 class Sections(Fragment):
 
+    # Unless quoted, symbol names start with a letter, underscore, or point
+    # and may include any letters, underscores, digits, points, and hyphens.
+    GNU_LD_SYMBOLS = Word(alphas + "_.", alphanums + "._-")
+
+    entries_grammar = Combine(GNU_LD_SYMBOLS + Optional("+"))
+
     grammars = {
-        "entries": KeyGrammar(Word(alphanums + "+.").setResultsName("section"), 1, None, True)
+        "entries": KeyGrammar(entries_grammar.setResultsName("section"), 1, None, True)
     }
 
     """

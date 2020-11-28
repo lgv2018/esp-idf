@@ -35,7 +35,7 @@
 #include "osi/fixed_queue.h"
 
 #define HCI_HOST_TASK_PINNED_TO_CORE    (TASK_PINNED_TO_CORE)
-#define HCI_HOST_TASK_STACK_SIZE        (4096 + BT_TASK_EXTRA_STACK_SIZE)
+#define HCI_HOST_TASK_STACK_SIZE        (2048 + BT_TASK_EXTRA_STACK_SIZE)
 #define HCI_HOST_TASK_PRIO              (BT_TASK_MAX_PRIORITIES - 3)
 #define HCI_HOST_TASK_NAME              "hciT"
 
@@ -563,4 +563,3 @@ const hci_t *hci_layer_get_interface(void)
     init_layer_interface();
     return &interface;
 }
-

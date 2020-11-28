@@ -177,7 +177,7 @@ module state. Dependency expressions have the following syntax:
            <expr> '&&' <expr>                   (6)
            <expr> '||' <expr>                   (7)
 
-Expressions are listed in decreasing order of precedence. 
+Expressions are listed in decreasing order of precedence.
 
 (1) Convert the symbol into an expression. Boolean and tristate symbols
     are simply converted into the respective expression values. All
@@ -259,6 +259,7 @@ end a menu entry:
 - menu/endmenu
 - if/endif
 - source
+- rsource
 The first five also start the definition of a menu entry.
 
 config:
@@ -332,6 +333,14 @@ source:
 	"source" <prompt>
 
 This reads the specified configuration file. This file is always parsed.
+
+rsource:
+
+	"rsource" <prompt>
+
+This reads the specified configuration file relative to the current file. This file is always parsed.
+
+
 
 mainmenu:
 

@@ -15,13 +15,9 @@
 #define ESP_CORE_DUMP_PORT_H_
 
 #include "freertos/FreeRTOS.h"
-#if CONFIG_ESP32_COREDUMP_CHECKSUM_CRC32
-#if CONFIG_IDF_TARGET_ESP32
-#include "esp32/rom/crc.h"
-#elif CONFIG_IDF_TARGET_ESP32S2
-#include "esp32s2/rom/crc.h"
-#endif
-#elif CONFIG_ESP32_COREDUMP_CHECKSUM_SHA256
+#if CONFIG_ESP_COREDUMP_CHECKSUM_CRC32
+#include "esp_rom_crc.h"
+#elif CONFIG_ESP_COREDUMP_CHECKSUM_SHA256
 #include "mbedtls/sha256.h"
 #endif
 #include "esp_core_dump_priv.h"
@@ -36,14 +32,22 @@ extern "C" {
 #if CONFIG_IDF_TARGET_ESP32
 #define COREDUMP_VERSION_CHIP ESP_CHIP_ID_ESP32
 #elif CONFIG_IDF_TARGET_ESP32S2
-// TODO: set to ESP32-S2 chip ID
-#define COREDUMP_VERSION_CHIP ~ESP_CHIP_ID_ESP32
+#define COREDUMP_VERSION_CHIP ESP_CHIP_ID_ESP32S2
 #endif
 
 #define COREDUMP_TCB_SIZE   sizeof(StaticTask_t)
 
+typedef enum {
+    COREDUMP_MEMORY_DRAM,
+    COREDUMP_MEMORY_IRAM,
+    COREDUMP_MEMORY_RTC,
+    COREDUMP_MEMORY_RTC_FAST,
+    COREDUMP_MEMORY_MAX,
+    COREDUMP_MEMORY_START = COREDUMP_MEMORY_DRAM
+} coredump_region_t;
+
 // Gets RTOS tasks snapshot
-uint32_t esp_core_dump_get_tasks_snapshot(core_dump_task_header_t* const tasks,
+uint32_t esp_core_dump_get_tasks_snapshot(core_dump_task_header_t** const tasks,
                         const uint32_t snapshot_size);
 
 // Checks TCB consistency
@@ -52,7 +56,7 @@ bool esp_core_dump_tcb_addr_is_sane(uint32_t addr);
 bool esp_core_dump_task_stack_end_is_sane(uint32_t sp);
 bool esp_core_dump_mem_seg_is_sane(uint32_t addr, uint32_t sz);
 void *esp_core_dump_get_current_task_handle(void);
-bool esp_core_dump_check_task(void *frame, core_dump_task_header_t *task_snaphort, bool* is_current, bool* stack_is_valid);
+bool esp_core_dump_check_task(panic_info_t *info, core_dump_task_header_t *task_snaphort, bool* is_current, bool* stack_is_valid);
 bool esp_core_dump_check_stack(uint32_t stack_start, uint32_t stack_end);
 uint32_t esp_core_dump_get_stack(core_dump_task_header_t* task_snapshot, uint32_t* stk_base, uint32_t* stk_len);
 
@@ -61,12 +65,16 @@ uint32_t esp_core_dump_get_task_regs_dump(core_dump_task_header_t *task, void **
 void esp_core_dump_init_extra_info(void);
 uint32_t esp_core_dump_get_extra_info(void **info);
 
+uint32_t esp_core_dump_get_user_ram_segments(void);
+uint32_t esp_core_dump_get_user_ram_size(void);
+int esp_core_dump_get_user_ram_info(coredump_region_t region, uint32_t *start);
+
 // Data integrity check functions
 void esp_core_dump_checksum_init(core_dump_write_data_t* wr_data);
 void esp_core_dump_checksum_update(core_dump_write_data_t* wr_data, void* data, size_t data_len);
 size_t esp_core_dump_checksum_finish(core_dump_write_data_t* wr_data, void** chs_ptr);
 
-#if CONFIG_ESP32_COREDUMP_CHECKSUM_SHA256
+#if CONFIG_ESP_COREDUMP_CHECKSUM_SHA256
 void esp_core_dump_print_sha256(const char* msg, const uint8_t* sha_output);
 int esp_core_dump_sha(mbedtls_sha256_context *ctx,
         const unsigned char *input, size_t ilen, unsigned char output[32]);
@@ -75,32 +83,32 @@ int esp_core_dump_sha(mbedtls_sha256_context *ctx,
 #define esp_core_dump_in_isr_context() xPortInterruptedFromISRContext()
 uint32_t esp_core_dump_get_isr_stack_end(void);
 
-#if CONFIG_ESP32_CORE_DUMP_STACK_SIZE > 0
+#if CONFIG_ESP_COREDUMP_STACK_SIZE > 0
 #if LOG_LOCAL_LEVEL >= ESP_LOG_DEBUG
 // increase stack size in verbose mode
-#define ESP32_CORE_DUMP_STACK_SIZE (CONFIG_ESP32_CORE_DUMP_STACK_SIZE+100)
+#define ESP_COREDUMP_STACK_SIZE (CONFIG_ESP_COREDUMP_STACK_SIZE+100)
 #else
-#define ESP32_CORE_DUMP_STACK_SIZE CONFIG_ESP32_CORE_DUMP_STACK_SIZE
+#define ESP_COREDUMP_STACK_SIZE CONFIG_ESP_COREDUMP_STACK_SIZE
 #endif
 #endif
 
 void esp_core_dump_report_stack_usage(void);
 
-#if ESP32_CORE_DUMP_STACK_SIZE > 0
+#if ESP_COREDUMP_STACK_SIZE > 0
 #define COREDUMP_STACK_FILL_BYTE	        (0xa5U)
 extern uint8_t s_coredump_stack[];
 extern uint8_t *s_core_dump_sp;
 
 #if LOG_LOCAL_LEVEL >= ESP_LOG_DEBUG
 #define esp_core_dump_fill_stack() \
-    memset(s_coredump_stack, COREDUMP_STACK_FILL_BYTE, ESP32_CORE_DUMP_STACK_SIZE)
+    memset(s_coredump_stack, COREDUMP_STACK_FILL_BYTE, ESP_COREDUMP_STACK_SIZE)
 #else
 #define esp_core_dump_fill_stack()
 #endif
 
 #define esp_core_dump_setup_stack() \
 { \
-    s_core_dump_sp = (uint8_t *)((uint32_t)(s_coredump_stack + ESP32_CORE_DUMP_STACK_SIZE - 1) & ~0xf); \
+    s_core_dump_sp = (uint8_t *)((uint32_t)(s_coredump_stack + ESP_COREDUMP_STACK_SIZE - 1) & ~0xf); \
     esp_core_dump_fill_stack(); \
     /* watchpoint 1 can be used for task stack overflow detection, re-use it, it is no more necessary */ \
 	esp_clear_watchpoint(1); \
@@ -122,6 +130,16 @@ extern uint8_t *s_core_dump_sp;
     } \
 }
 #endif
+
+// coredump memory regions defined during compile timing
+extern int _coredump_dram_start;
+extern int _coredump_dram_end;
+extern int _coredump_iram_start;
+extern int _coredump_iram_end;
+extern int _coredump_rtc_start;
+extern int _coredump_rtc_end;
+extern int _coredump_rtc_fast_start;
+extern int _coredump_rtc_fast_end;
 
 #ifdef __cplusplus
 }

@@ -4,14 +4,14 @@ SDIO Card Slave Driver
 Overview
 --------
 
-The ESP32 SDIO Card peripherals (Host, Slave) shares two sets of pins as below table.
-The first set is usually occupied by SPI0 bus which is responsible for the SPI flash holding the code to run.
-This means SDIO slave driver can only runs on the second set of pins while SDIO host is not using it.
+    The ESP32 SDIO Card peripherals (Host, Slave) shares two sets of pins as below table.
+    The first set is usually occupied by SPI0 bus which is responsible for the SPI flash holding the code to run.
+    This means SDIO slave driver can only runs on the second set of pins while SDIO host is not using it.
 
-The SDIO slave can run under 3 modes: SPI, 1-bit SD and 4-bit SD modes, which
-is detected automatically by the hardware. According to the SDIO
-specification, CMD and DAT0-3 lines should be pulled up no matter in 1-bit,
-4-bit or SPI mode.
+    The SDIO slave can run under 3 modes: SPI, 1-bit SD and 4-bit SD modes, which
+    is detected automatically by the hardware. According to the SDIO
+    specification, CMD and DAT0-3 lines should be pulled up no matter in 1-bit,
+    4-bit or SPI mode.
 
 Connections
 ^^^^^^^^^^^
@@ -133,10 +133,6 @@ Func 1. Please refer to :ref:`esp_slave_protocol_layer`. There is also a compone
 for ESP32 master to communicate with ESP32 SDIO slave, see example :example:`peripherals/sdio`
 when programming your host.
 
-.. toctree::
-    :hidden:
-
-    esp_slave_protocol
 
 .. _interrupts:
 
@@ -277,6 +273,7 @@ Slave/master communication: :example:`peripherals/sdio`.
 API Reference
 -------------
 
-.. include:: /_build/inc/sdio_slave_types.inc
-.. include:: /_build/inc/sdio_slave.inc
+.. include-build-file:: inc/sdio_slave_types.inc
+.. include-build-file:: inc/sdio_slave.inc
+
 

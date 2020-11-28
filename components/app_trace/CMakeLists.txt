@@ -1,4 +1,4 @@
-set(srcs 
+set(srcs
     "app_trace.c"
     "app_trace_util.c"
     "host_file_io.c"
@@ -12,7 +12,7 @@ if(CONFIG_SYSVIEW_ENABLE)
         sys_view/SEGGER
         sys_view/Sample/OS)
 
-    list(APPEND srcs 
+    list(APPEND srcs
         "sys_view/SEGGER/SEGGER_SYSVIEW.c"
         "sys_view/Sample/Config/SEGGER_SYSVIEW_Config_FreeRTOS.c"
         "sys_view/Sample/OS/SEGGER_SYSVIEW_FreeRTOS.c"
@@ -39,4 +39,4 @@ target_compile_options(${COMPONENT_LIB} PRIVATE "-fno-profile-arcs" "-fno-test-c
 
 # Force app_trace to also appear later than gcov in link line
 idf_component_get_property(app_trace app_trace COMPONENT_LIB)
-target_link_libraries(${COMPONENT_LIB} INTERFACE $<TARGET_FILE:${app_trace}> gcov $<TARGET_FILE:${app_trace}> ${LIBC})
+target_link_libraries(${COMPONENT_LIB} INTERFACE $<TARGET_FILE:${app_trace}> gcov $<TARGET_FILE:${app_trace}> c)

@@ -140,6 +140,7 @@ function(__kconfig_generate_config sdkconfig sdkconfig_defaults)
 
     idf_build_get_property(idf_target IDF_TARGET)
     idf_build_get_property(idf_path IDF_PATH)
+    idf_build_get_property(idf_env_fpga __IDF_ENV_FPGA)
 
     string(REPLACE ";" " " kconfigs "${kconfigs}")
     string(REPLACE ";" " " kconfig_projbuilds "${kconfig_projbuilds}")
@@ -191,6 +192,8 @@ function(__kconfig_generate_config sdkconfig sdkconfig_defaults)
     set(config_dir ${build_dir}/config)
     file(MAKE_DIRECTORY "${config_dir}")
 
+    message(STATUS "Project sdkconfig file ${sdkconfig}")
+
     # Generate the config outputs
     set(sdkconfig_cmake ${config_dir}/sdkconfig.cmake)
     set(sdkconfig_header ${config_dir}/sdkconfig.h)
@@ -238,7 +241,6 @@ function(__kconfig_generate_config sdkconfig sdkconfig_defaults)
 
     # Or if the config generation tool changes
     set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${idf_path}/tools/kconfig_new/confgen.py")
-    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${idf_path}/tools/kconfig_new/kconfiglib.py")
 
     set_property(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}" APPEND PROPERTY
                 ADDITIONAL_MAKE_CLEAN_FILES "${sdkconfig_header}" "${sdkconfig_cmake}")
@@ -266,6 +268,7 @@ function(__kconfig_generate_config sdkconfig sdkconfig_defaults)
         COMMAND ${prepare_kconfig_files_command}
         COMMAND ${confgen_basecommand}
         --env "IDF_TARGET=${idf_target}"
+        --env "IDF_ENV_FPGA=${idf_env_fpga}"
         --dont-write-deprecated
         --output config ${sdkconfig}
         COMMAND ${TERM_CHECK_CMD}
@@ -275,13 +278,17 @@ function(__kconfig_generate_config sdkconfig sdkconfig_defaults)
         "IDF_CMAKE=y"
         "KCONFIG_CONFIG=${sdkconfig}"
         "IDF_TARGET=${idf_target}"
+        "IDF_ENV_FPGA=${idf_env_fpga}"
         ${MENUCONFIG_CMD} ${root_kconfig}
         # VERBATIM cannot be used here because it cannot handle ${mconf}="winpty mconf-idf" and the escaping must be
         # done manually
         USES_TERMINAL
         # additional run of confgen esures that the deprecated options will be inserted into sdkconfig (for backward
         # compatibility)
-        COMMAND ${confgen_basecommand} --env "IDF_TARGET=${idf_target}" --output config ${sdkconfig}
+        COMMAND ${confgen_basecommand}
+        --env "IDF_TARGET=${idf_target}"
+        --env "IDF_ENV_FPGA=${idf_env_fpga}"
+        --output config ${sdkconfig}
         )
 
     # Custom target to run confserver.py from the build tool

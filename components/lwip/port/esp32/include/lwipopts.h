@@ -157,18 +157,32 @@
    --------------------------------
 */
 /**
- * IP_REASSEMBLY==1: Reassemble incoming fragmented IP packets. Note that
+ * IP_REASSEMBLY==1: Reassemble incoming fragmented IP4 packets. Note that
  * this option does not affect outgoing packet sizes, which can be controlled
  * via IP_FRAG.
  */
-#define IP_REASSEMBLY                   CONFIG_LWIP_IP_REASSEMBLY
+#define IP_REASSEMBLY                   CONFIG_LWIP_IP4_REASSEMBLY
 
 /**
- * IP_FRAG==1: Fragment outgoing IP packets if their size exceeds MTU. Note
+ * LWIP_IPV6_REASS==1: reassemble incoming IP6 packets that fragmented. Note that
+ * this option does not affect outgoing packet sizes, which can be controlled
+ * via LWIP_IPV6_FRAG.
+ */
+#define LWIP_IPV6_REASS                 CONFIG_LWIP_IP6_REASSEMBLY
+
+/**
+ * IP_FRAG==1: Fragment outgoing IP4 packets if their size exceeds MTU. Note
  * that this option does not affect incoming packet sizes, which can be
  * controlled via IP_REASSEMBLY.
  */
-#define IP_FRAG                         CONFIG_LWIP_IP_FRAG
+#define IP_FRAG                         CONFIG_LWIP_IP4_FRAG
+
+/**
+ * LWIP_IPV6_FRAG==1: Fragment outgoing IP6 packets if their size exceeds MTU. Note
+ * that this option does not affect incoming packet sizes, which can be
+ * controlled via IP_REASSEMBLY.
+ */
+#define LWIP_IPV6_FRAG                  CONFIG_LWIP_IP6_FRAG
 
 /**
  * IP_REASS_MAXAGE: Maximum time (in multiples of IP_TMR_INTERVAL - so seconds, normally)
@@ -184,6 +198,20 @@
  * packets even if the maximum amount of fragments is enqueued for reassembly!
  */
 #define IP_REASS_MAX_PBUFS              10
+
+/**
+ * IP_FORWARD==1: Enables the ability to forward IP packets across network
+ * interfaces. If you are going to run lwIP on a device with only one network
+ * interface, define this to 0.
+ */
+#define IP_FORWARD                      CONFIG_LWIP_IP_FORWARD
+
+/**
+ * IP_NAPT==1: Enables IPv4 Network Address and Port Translation.
+ * Note that both CONFIG_LWIP_IP_FORWARD and CONFIG_LWIP_L2_TO_L3_COPY options
+ * need to be enabled in system configuration for the NAPT to work on ESP platform
+ */
+#define IP_NAPT                         CONFIG_LWIP_IPV4_NAPT
 
 /*
    ----------------------------------
@@ -386,6 +414,23 @@
 #define TCP_RCV_SCALE                   CONFIG_LWIP_TCP_RCV_SCALE
 #endif
 
+/**
+ * LWIP_TCP_RTO_TIME: TCP rto time.
+ * Default is 3 second.
+ */
+#define LWIP_TCP_RTO_TIME             CONFIG_LWIP_TCP_RTO_TIME
+
+/**
+ * Set TCP hook for Initial Sequence Number (ISN)
+ */
+#ifdef CONFIG_LWIP_TCP_ISN_HOOK
+#include <lwip/arch.h>
+struct ip_addr;
+u32_t lwip_hook_tcp_isn(const struct ip_addr *local_ip, u16_t local_port,
+                        const struct ip_addr *remote_ip, u16_t remote_port);
+#define LWIP_HOOK_TCP_ISN               lwip_hook_tcp_isn
+#endif
+
 /*
    ----------------------------------
    ---------- Pbuf options ----------
@@ -439,6 +484,34 @@
    ---------- SLIPIF options ----------
    ------------------------------------
 */
+
+#ifdef CONFIG_LWIP_SLIP_SUPPORT
+
+/**
+ * Enable SLIP receive from ISR functions and disable Rx thread
+ *
+ * This is the only supported mode of lwIP SLIP interface, so that
+ * - incoming packets are queued into pbufs
+ * - no thread is created from lwIP
+ * meaning it is the application responsibility to read data
+ * from IO driver and feed them to the slip interface
+ */
+#define SLIP_RX_FROM_ISR                 1
+#define SLIP_USE_RX_THREAD               0
+
+/**
+ * PPP_DEBUG: Enable debugging for PPP.
+ */
+#define SLIP_DEBUG_ON                    CONFIG_LWIP_SLIP_DEBUG_ON
+
+#if SLIP_DEBUG_ON
+#define SLIP_DEBUG                       LWIP_DBG_ON
+#else
+#define SLIP_DEBUG                       LWIP_DBG_OFF
+#endif
+
+
+#endif
 
 /*
    ------------------------------------
@@ -549,6 +622,11 @@
 #define LWIP_TCP_KEEPALIVE              1
 
 /**
+ * LWIP_SO_LINGER==1: Enable SO_LINGER processing.
+ */
+#define LWIP_SO_LINGER                  CONFIG_LWIP_SO_LINGER
+
+/**
  * LWIP_SO_RCVBUF==1: Enable SO_RCVBUF processing.
  */
 #define LWIP_SO_RCVBUF                  CONFIG_LWIP_SO_RCVBUF
@@ -612,6 +690,14 @@
 #if PPP_SUPPORT
 
 /**
+ * PPP_IPV6_SUPPORT == 1: Enable IPV6 support for local link
+ * between modem and lwIP stack.
+ * Some modems do not support IPV6 addressing in local link and
+ * the only option available is to disable IPV6 address negotiation.
+ */
+#define PPP_IPV6_SUPPORT				CONFIG_LWIP_PPP_ENABLE_IPV6
+
+/**
  * PPP_NOTIFY_PHASE==1: Support PPP notify phase.
  */
 #define PPP_NOTIFY_PHASE                CONFIG_LWIP_PPP_NOTIFY_PHASE_SUPPORT
@@ -653,6 +739,8 @@
 
 #if PPP_DEBUG_ON
 #define PPP_DEBUG                       LWIP_DBG_ON
+#define PRINTPKT_SUPPORT                1
+#define PPP_PROTOCOLNAME                1
 #else
 #define PPP_DEBUG                       LWIP_DBG_OFF
 #endif
@@ -675,6 +763,16 @@
  */
 #define LWIP_IPV6                       1
 
+/**
+ * MEMP_NUM_ND6_QUEUE: Max number of IPv6 packets to queue during MAC resolution.
+ */
+#define MEMP_NUM_ND6_QUEUE              CONFIG_LWIP_IPV6_MEMP_NUM_ND6_QUEUE
+
+/**
+ * LWIP_ND6_NUM_NEIGHBORS: Number of entries in IPv6 neighbor cache
+ */
+#define LWIP_ND6_NUM_NEIGHBORS          CONFIG_LWIP_IPV6_ND6_NUM_NEIGHBORS
+
 /*
    ---------------------------------------
    ---------- Hook options ---------------
@@ -689,37 +787,82 @@
 /**
  * ETHARP_DEBUG: Enable debugging in etharp.c.
  */
-#define ETHARP_DEBUG                    LWIP_DBG_OFF
+#ifdef CONFIG_LWIP_ETHARP_DEBUG
+#define ETHARP_DEBUG                     LWIP_DBG_ON
+#else
+#define ETHARP_DEBUG                     LWIP_DBG_OFF
+#endif
+
 
 /**
  * NETIF_DEBUG: Enable debugging in netif.c.
  */
+#ifdef CONFIG_LWIP_NETIF_DEBUG
+#define NETIF_DEBUG                     LWIP_DBG_ON
+#else
 #define NETIF_DEBUG                     LWIP_DBG_OFF
+#endif
 
 /**
  * PBUF_DEBUG: Enable debugging in pbuf.c.
  */
-#define PBUF_DEBUG                      LWIP_DBG_OFF
+#ifdef CONFIG_LWIP_PBUF_DEBUG
+#define PBUF_DEBUG                     LWIP_DBG_ON
+#else
+#define PBUF_DEBUG                     LWIP_DBG_OFF
+#endif
 
 /**
  * API_LIB_DEBUG: Enable debugging in api_lib.c.
  */
-#define API_LIB_DEBUG                   LWIP_DBG_OFF
+#ifdef CONFIG_LWIP_API_LIB_DEBUG
+#define API_LIB_DEBUG                     LWIP_DBG_ON
+#else
+#define API_LIB_DEBUG                     LWIP_DBG_OFF
+#endif
+
 
 /**
  * SOCKETS_DEBUG: Enable debugging in sockets.c.
  */
+#ifdef CONFIG_LWIP_SOCKETS_DEBUG
+#define SOCKETS_DEBUG                   LWIP_DBG_ON
+#else
 #define SOCKETS_DEBUG                   LWIP_DBG_OFF
+#endif
 
 /**
  * ICMP_DEBUG: Enable debugging in icmp.c.
  */
+#ifdef CONFIG_LWIP_ICMP_DEBUG
+#define ICMP_DEBUG                      LWIP_DBG_ON
+#else
 #define ICMP_DEBUG                      LWIP_DBG_OFF
+#endif
+
+#ifdef CONFIG_LWIP_ICMP6_DEBUG
+#define ICMP6_DEBUG                      LWIP_DBG_ON
+#else
+#define ICMP6_DEBUG                      LWIP_DBG_OFF
+#endif
 
 /**
  * IP_DEBUG: Enable debugging for IP.
  */
+#ifdef CONFIG_LWIP_IP_DEBUG
+#define IP_DEBUG                        LWIP_DBG_ON
+#else
 #define IP_DEBUG                        LWIP_DBG_OFF
+#endif
+
+/**
+ * IP_DEBUG: Enable debugging for IP.
+ */
+#ifdef CONFIG_LWIP_IP6_DEBUG
+#define IP6_DEBUG                        LWIP_DBG_ON
+#else
+#define IP6_DEBUG                        LWIP_DBG_OFF
+#endif
 
 /**
  * MEMP_DEBUG: Enable debugging in memp.c.
@@ -779,7 +922,6 @@
 #define ESP_THREAD_SAFE_DEBUG           LWIP_DBG_OFF
 #define ESP_DHCP                        1
 #define ESP_DNS                         1
-#define ESP_IPV6_AUTOCONFIG             1
 #define ESP_PERF                        0
 #define ESP_RANDOM_TCP_PORT             1
 #define ESP_IP4_ATON                    1
@@ -802,6 +944,10 @@
 #define ESP_SOCKET                      1
 #define ESP_LWIP_SELECT                 1
 #define ESP_LWIP_LOCK                   1
+
+#ifdef CONFIG_LWIP_IPV6_AUTOCONFIG
+#define ESP_IPV6_AUTOCONFIG             CONFIG_LWIP_IPV6_AUTOCONFIG
+#endif
 
 #ifdef ESP_IRAM_ATTR
 #undef ESP_IRAM_ATTR

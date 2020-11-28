@@ -12,8 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef _ESP32_SOC_H_
-#define _ESP32_SOC_H_
+#pragma once
 
 #ifndef __ASSEMBLER__
 #include <stdint.h>
@@ -66,12 +65,14 @@
 #define DR_REG_PCNT_BASE                        0x3f417000
 #define DR_REG_SLC_BASE                         0x3f418000
 #define DR_REG_LEDC_BASE                        0x3f419000
+#define DR_REG_CP_BASE                          0x3f4c3000
 #define DR_REG_EFUSE_BASE                       0x3f41A000
 #define DR_REG_NRX_BASE                         0x3f41CC00
 #define DR_REG_BB_BASE                          0x3f41D000
 #define DR_REG_TIMERGROUP0_BASE                 0x3f41F000
 #define DR_REG_TIMERGROUP1_BASE                 0x3f420000
 #define DR_REG_RTC_SLOWMEM_BASE                 0x3f421000
+#define DR_REG_SYSTIMER_BASE                    0x3f423000
 #define DR_REG_SPI2_BASE                        0x3f424000
 #define DR_REG_SPI3_BASE                        0x3f425000
 #define DR_REG_SYSCON_BASE                      0x3f426000
@@ -80,6 +81,7 @@
 #define DR_REG_SPI4_BASE                        0x3f437000
 #define DR_REG_USB_WRAP_BASE                    0x3f439000
 #define DR_REG_APB_SARADC_BASE                  0x3f440000
+#define DR_REG_USB_BASE                         0x60080000
 
 #define REG_UHCI_BASE(i)         (DR_REG_UHCI0_BASE)
 #define REG_UART_BASE( i )  (DR_REG_UART_BASE + (i) * 0x10000 )
@@ -89,6 +91,10 @@
 #define REG_TIMG_BASE(i)              (DR_REG_TIMERGROUP0_BASE + (i)*0x1000)
 #define REG_SPI_MEM_BASE(i)     (DR_REG_SPI0_BASE - (i) * 0x1000)
 #define REG_I2C_BASE(i)    (DR_REG_I2C_EXT_BASE + (i) * 0x14000 )
+
+//Convenient way to replace the register ops when ulp riscv projects
+//consume this file
+#ifndef ULP_RISCV_REGISTER_OPS
 
 //Registers Operation {{
 #define ETS_UNCACHED_ADDR(addr) (addr)
@@ -226,6 +232,7 @@
 
 #endif /* !__ASSEMBLER__ */
 //}}
+#endif /* !ULP_RISCV_REGISTER_OPS */
 
 //Periheral Clock {{
 #define  APB_CLK_FREQ_ROM                            ( 40*1000000 )
@@ -262,15 +269,21 @@
 #define SOC_EXTRAM_DATA_LOW 0x3F500000
 #define SOC_EXTRAM_DATA_HIGH 0x3FF80000
 
+#define SOC_EXTRAM_DATA_SIZE (SOC_EXTRAM_DATA_HIGH - SOC_EXTRAM_DATA_LOW)
+
 //First and last words of the D/IRAM region, for both the DRAM address as well as the IRAM alias.
 #define SOC_DIRAM_IRAM_LOW    0x40020000
 #define SOC_DIRAM_IRAM_HIGH   0x40070000
 #define SOC_DIRAM_DRAM_LOW    0x3FFB0000
 #define SOC_DIRAM_DRAM_HIGH   0x40000000
 
-// Region of memory accessible via DMA. See esp_ptr_dma_capable().
+// Region of memory accessible via DMA in internal memory. See esp_ptr_dma_capable().
 #define SOC_DMA_LOW  0x3FFB0000
 #define SOC_DMA_HIGH 0x40000000
+
+// Region of memory accessible via DMA in external memory. See esp_ptr_dma_ext_capable().
+#define SOC_DMA_EXT_LOW     0x3F500000
+#define SOC_DMA_EXT_HIGH    0x3FF80000
 
 // Region of memory that is byte-accessible. See esp_ptr_byte_accessible().
 #define SOC_BYTE_ACCESSIBLE_LOW     0x3FF9E000
@@ -280,6 +293,9 @@
 //(excluding RTC data region, that's checked separately.) See esp_ptr_internal().
 #define SOC_MEM_INTERNAL_LOW        0x3FF9E000
 #define SOC_MEM_INTERNAL_HIGH       0x40072000
+
+// Start (highest address) of ROM boot stack, only relevant during early boot
+#define SOC_ROM_STACK_START         0x3fffe70c
 
 //interrupt cpu using table, Please see the core-isa.h
 /*************************************************************************************************************
@@ -326,7 +342,7 @@
 #define ETS_TG0_T1_INUM                         10 /**< use edge interrupt*/
 #define ETS_FRC1_INUM                           22
 #define ETS_T1_WDT_INUM                         24
-#define ETS_CACHEERR_INUM                       25
+#define ETS_MEMACCESS_ERR_INUM                  25
 #define ETS_DPORT_INUM                          28
 
 //CPU0 Interrupt number used in ROM, should be cancelled in SDK
@@ -342,5 +358,3 @@
 
 //Invalid interrupt for number interrupt matrix
 #define ETS_INVALID_INUM                        6
-
-#endif /* _ESP32_SOC_H_ */

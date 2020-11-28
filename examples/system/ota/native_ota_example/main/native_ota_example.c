@@ -183,7 +183,7 @@ static void ota_example_task(void *pvParameter)
 
                     image_header_was_checked = true;
 
-                    err = esp_ota_begin(update_partition, OTA_SIZE_UNKNOWN, &update_handle);
+                    err = esp_ota_begin(update_partition, OTA_WITH_SEQUENTIAL_WRITES, &update_handle);
                     if (err != ESP_OK) {
                         ESP_LOGE(TAG, "esp_ota_begin failed (%s)", esp_err_to_name(err));
                         http_cleanup(client);
@@ -249,7 +249,7 @@ static void ota_example_task(void *pvParameter)
 static bool diagnostic(void)
 {
     gpio_config_t io_conf;
-    io_conf.intr_type    = GPIO_PIN_INTR_DISABLE;
+    io_conf.intr_type    = GPIO_INTR_DISABLE;
     io_conf.mode         = GPIO_MODE_INPUT;
     io_conf.pin_bit_mask = (1ULL << CONFIG_EXAMPLE_GPIO_DIAGNOSTIC);
     io_conf.pull_down_en = GPIO_PULLDOWN_DISABLE;

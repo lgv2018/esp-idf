@@ -4,7 +4,7 @@ High-Level Interrupts
 .. toctree::
    :maxdepth: 1
 
-The Xtensa architecture has support for 32 interrupts, divided over 8 levels, plus an assortment of exceptions. On the ESP32, the interrupt mux allows most interrupt sources to be routed to these interrupts using the :doc:`interrupt allocator <../api-reference/system/intr_alloc>`. Normally, interrupts will be written in C, but ESP-IDF allows high-level interrupts to be written in assembly as well, allowing for very low interrupt latencies.
+The Xtensa architecture has support for 32 interrupts, divided over 8 levels, plus an assortment of exceptions. On the {IDF_TARGET_NAME}, the interrupt mux allows most interrupt sources to be routed to these interrupts using the :doc:`interrupt allocator <../api-reference/system/intr_alloc>`. Normally, interrupts will be written in C, but ESP-IDF allows high-level interrupts to be written in assembly as well, allowing for very low interrupt latencies.
 
 Interrupt Levels
 ----------------
@@ -28,16 +28,16 @@ Using these symbols is done by creating an assembly file (suffix .S) and definin
         .align      4
     xt_highint5:
         ... your code here
-        rsr     a0, EXCSAVE_5 
+        rsr     a0, EXCSAVE_5
         rfi     5
 
+For a real-life example, see the :component_file:`esp_system/port/soc/{IDF_TARGET_PATH_NAME}/dport_panic_highint_hdl.S` file; the panic handler interrupt is implemented there.
 
-For a real-life example, see the :component_file:`esp32/dport_panic_highint_hdl.S` file; the panic handler interrupt is implemented there.
 
 Notes
 -----
 
- - Do not call C code from a high-level interrupt; because these interupts still run in critical sections, this can cause crashes.
+ - Do not call C code from a high-level interrupt; because these interrupts still run in critical sections, this can cause crashes.
    (The panic handler interrupt does call normal C code, but this is OK because there is no intention of returning to the normal code
    flow afterwards.)
 
@@ -49,10 +49,16 @@ Notes
        ld_include_my_isr_file:
 
 
-(The symbol is called ``ld_include_my_isr_file`` here but can have any arbitrary name not defined anywhere else.) 
-Then, in the component.mk, add this file as an unresolved symbol to the ld command line arguments::
+The symbol is called ``ld_include_my_isr_file`` here but can have any arbitrary name not defined anywhere else.
+
+Then, in the component CMakeLists.txt, add this file as an unresolved symbol to the ld command line arguments::
+
+   target_link_libraries(${COMPONENT_TARGET} "-u ld_include_my_isr_file")
+
+If using the legacy Make build system, add the following to component.mk, instead::
 
    COMPONENT_ADD_LDFLAGS := -u ld_include_my_isr_file
+
 
 This should cause the linker to always include a file defining ``ld_include_my_isr_file``, causing the ISR to always be linked in.
 

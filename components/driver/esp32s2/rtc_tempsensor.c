@@ -12,24 +12,25 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include <esp_types.h>
 #include <stdlib.h>
 #include <ctype.h>
+#include "esp_types.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include "esp_log.h"
+#include "soc/rtc_cntl_reg.h"
 #include "soc/rtc_io_reg.h"
 #include "soc/rtc_io_struct.h"
 #include "soc/sens_reg.h"
 #include "soc/sens_struct.h"
-#include "temp_sensor.h"
-#include "esp32s2/rom/ets_sys.h"
+#include "driver/temp_sensor.h"
+#include "regi2c_ctrl.h"
 
 static const char *TAG = "tsens";
 
 #define TSENS_CHECK(res, ret_val) ({                                    \
     if (!(res)) {                                                       \
-        ESP_LOGE(TAG, "%s:%d (%s)", __FILE__, __LINE__, __FUNCTION__);  \
+        ESP_LOGE(TAG, "%s(%d)", __FUNCTION__, __LINE__);                \
         return (ret_val);                                               \
     }                                                                   \
 })
@@ -60,7 +61,11 @@ static SemaphoreHandle_t rtc_tsens_mux = NULL;
 
 esp_err_t temp_sensor_set_config(temp_sensor_config_t tsens)
 {
-    SENS.sar_tctrl.tsens_dac = dac_offset[tsens.dac_offset].set_val;
+    CLEAR_PERI_REG_MASK(RTC_CNTL_ANA_CONF_REG, RTC_CNTL_SAR_I2C_FORCE_PD_M);
+    SET_PERI_REG_MASK(RTC_CNTL_ANA_CONF_REG, RTC_CNTL_SAR_I2C_FORCE_PU_M);
+    CLEAR_PERI_REG_MASK(ANA_CONFIG_REG, I2C_SAR_M);
+    SET_PERI_REG_MASK(ANA_CONFIG2_REG, ANA_SAR_CFG2_M);
+    REGI2C_WRITE_MASK(I2C_SAR_ADC, I2C_SARADC_TSENS_DAC, dac_offset[tsens.dac_offset].set_val);
     SENS.sar_tctrl.tsens_clk_div = tsens.clk_div;
     SENS.sar_tctrl.tsens_power_up_force = 1;
     SENS.sar_tctrl2.tsens_xpd_wait = TSENS_XPD_WAIT_DEFAULT;
@@ -77,9 +82,13 @@ esp_err_t temp_sensor_set_config(temp_sensor_config_t tsens)
 esp_err_t temp_sensor_get_config(temp_sensor_config_t *tsens)
 {
     TSENS_CHECK(tsens != NULL, ESP_ERR_INVALID_ARG);
-    tsens->dac_offset = SENS.sar_tctrl.tsens_dac;
-    for(int i=TSENS_DAC_L0; i<TSENS_DAC_MAX; i++) {
-        if(tsens->dac_offset == dac_offset[i].set_val) {
+    CLEAR_PERI_REG_MASK(RTC_CNTL_ANA_CONF_REG, RTC_CNTL_SAR_I2C_FORCE_PD_M);
+    SET_PERI_REG_MASK(RTC_CNTL_ANA_CONF_REG, RTC_CNTL_SAR_I2C_FORCE_PU_M);
+    CLEAR_PERI_REG_MASK(ANA_CONFIG_REG, I2C_SAR_M);
+    SET_PERI_REG_MASK(ANA_CONFIG2_REG, ANA_SAR_CFG2_M);
+    tsens->dac_offset = REGI2C_READ_MASK(I2C_SAR_ADC, I2C_SARADC_TSENS_DAC);
+    for (int i = TSENS_DAC_L0; i < TSENS_DAC_MAX; i++) {
+        if (tsens->dac_offset == dac_offset[i].set_val) {
             tsens->dac_offset = dac_offset[i].index;
             break;
         }

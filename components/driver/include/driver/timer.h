@@ -27,7 +27,20 @@ extern "C" {
 
 #define TIMER_BASE_CLK   (APB_CLK_FREQ)  /*!< Frequency of the clock on the input of the timer groups */
 
-typedef void (*timer_isr_t)(void *);
+/**
+ * @brief Interrupt handle callback function. User need to retrun a bool value
+ *        in callback.
+ *
+ * @return
+ *     - True Do task yield at the end of ISR
+ *     - False Not do task yield at the end of ISR
+ *
+ * @note If you called FreeRTOS functions in callback, you need to return true or false based on
+ *       the retrun value of argument `pxHigherPriorityTaskWoken`.
+ *       For example, `xQueueSendFromISR` is called in callback, if the return value `pxHigherPriorityTaskWoken`
+ *       of any FreeRTOS calls is pdTRUE, return true; otherwise return false.
+ */
+typedef bool (*timer_isr_t)(void *);
 
 /**
  * @brief Interrupt handle, used in order to free the isr after use.
@@ -191,6 +204,9 @@ esp_err_t timer_set_alarm(timer_group_t group_num, timer_idx_t timer_num, timer_
  *       If you want to realize some specific applications or write the whole ISR, you can
  *       call timer_isr_register(...) to register ISR.
  *
+ *       The callback should return a bool value to determine whether need to do YIELD at
+ *       the end of the ISR.
+ *
  *       If the intr_alloc_flags value ESP_INTR_FLAG_IRAM is set,
  *       the handler function must be declared with IRAM_ATTR attribute
  *       and can only call functions in IRAM or ROM. It cannot call other timer APIs.
@@ -331,8 +347,6 @@ esp_err_t timer_disable_intr(timer_group_t group_num, timer_idx_t timer_num);
  * @param group_num Timer group number, 0 for TIMERG0 or 1 for TIMERG1
  * @param timer_num Timer index.
  *
- * @return
- *     - None
  */
 void timer_group_intr_clr_in_isr(timer_group_t group_num, timer_idx_t timer_num) __attribute__((deprecated));
 
@@ -341,8 +355,6 @@ void timer_group_intr_clr_in_isr(timer_group_t group_num, timer_idx_t timer_num)
  * @param group_num Timer group number, 0 for TIMERG0 or 1 for TIMERG1
  * @param timer_num Timer index.
  *
- * @return
- *     - None
  */
 void timer_group_clr_intr_status_in_isr(timer_group_t group_num, timer_idx_t timer_num);
 
@@ -351,8 +363,6 @@ void timer_group_clr_intr_status_in_isr(timer_group_t group_num, timer_idx_t tim
  * @param group_num Timer group number, 0 for TIMERG0 or 1 for TIMERG1
  * @param timer_num Timer index.
  *
- * @return
- *     - None
  */
 void timer_group_enable_alarm_in_isr(timer_group_t group_num, timer_idx_t timer_num);
 
@@ -372,8 +382,6 @@ uint64_t timer_group_get_counter_value_in_isr(timer_group_t group_num, timer_idx
  * @param timer_num Timer index.
  * @param alarm_val Alarm threshold.
  *
- * @return
- *     - None
  */
 void timer_group_set_alarm_value_in_isr(timer_group_t group_num, timer_idx_t timer_num, uint64_t alarm_val);
 
@@ -383,8 +391,6 @@ void timer_group_set_alarm_value_in_isr(timer_group_t group_num, timer_idx_t tim
  * @param timer_num Timer index.
  * @param counter_en Enable/disable.
  *
- * @return
- *     - None
  */
 void timer_group_set_counter_enable_in_isr(timer_group_t group_num, timer_idx_t timer_num, timer_start_t counter_en);
 
@@ -411,8 +417,6 @@ uint32_t timer_group_get_intr_status_in_isr(timer_group_t group_num);
  * @param group_num Timer group number, 0 for TIMERG0 or 1 for TIMERG1
  * @param intr_mask Masked interrupt.
  *
- * @return
- *     - None
  */
 void timer_group_clr_intr_sta_in_isr(timer_group_t group_num, timer_intr_t intr_mask) __attribute__((deprecated));
 

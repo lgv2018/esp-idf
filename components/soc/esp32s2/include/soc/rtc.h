@@ -57,7 +57,7 @@ extern "C" {
 #define RTC_SLOW_CLK_8MD256_CAL_TIMEOUT_THRES(cycles)  (cycles << 12)
 #define RTC_SLOW_CLK_150K_CAL_TIMEOUT_THRES(cycles)  (cycles << 10)
 
-#define RTC_SLOW_CLK_FREQ_150K      150000
+#define RTC_SLOW_CLK_FREQ_90K      90000
 #define RTC_SLOW_CLK_FREQ_8MD256    (RTC_FAST_CLK_FREQ_APPROX / 256)
 #define RTC_SLOW_CLK_FREQ_32K       32768
 
@@ -149,6 +149,26 @@ typedef enum {
 } rtc_cpu_freq_t;
 
 /**
+ * @brief CPU clock source
+ */
+typedef enum {
+    RTC_CPU_FREQ_SRC_XTAL,  //!< XTAL
+    RTC_CPU_FREQ_SRC_PLL,   //!< PLL (480M or 320M)
+    RTC_CPU_FREQ_SRC_8M,    //!< Internal 8M RTC oscillator
+    RTC_CPU_FREQ_SRC_APLL   //!< APLL
+} rtc_cpu_freq_src_t;
+
+/**
+ * @brief CPU clock configuration structure
+ */
+typedef struct rtc_cpu_freq_config_s {
+    rtc_cpu_freq_src_t source;      //!< The clock from which CPU clock is derived
+    uint32_t source_freq_mhz;       //!< Source clock frequency
+    uint32_t div;                   //!< Divider, freq_mhz = source_freq_mhz / div
+    uint32_t freq_mhz;              //!< CPU clock frequency
+} rtc_cpu_freq_config_t;
+
+/**
  * @brief RTC SLOW_CLK frequency values
  */
 typedef enum {
@@ -187,7 +207,7 @@ typedef enum {
  */
 typedef struct {
     rtc_xtal_freq_t xtal_freq : 8;  //!< Main XTAL frequency
-    rtc_cpu_freq_t cpu_freq : 3;    //!< CPU frequency to set
+    uint32_t cpu_freq_mhz : 10;    //!< CPU frequency to set, in MHz
     rtc_fast_freq_t fast_freq : 1;  //!< RTC_FAST_CLK frequency to set
     rtc_slow_freq_t slow_freq : 2;  //!< RTC_SLOW_CLK frequency to set
     uint32_t clk_rtc_clk_div : 8;
@@ -201,7 +221,7 @@ typedef struct {
  */
 #define RTC_CLK_CONFIG_DEFAULT() { \
     .xtal_freq = RTC_XTAL_FREQ_40M, \
-    .cpu_freq = RTC_CPU_FREQ_80M, \
+    .cpu_freq_mhz = 80, \
     .fast_freq = RTC_FAST_FREQ_8M, \
     .slow_freq = RTC_SLOW_FREQ_RTC, \
     .clk_rtc_clk_div = 0, \
@@ -304,6 +324,11 @@ void rtc_clk_xtal_freq_update(rtc_xtal_freq_t xtal_freq);
  * @param en  true to enable, false to disable
  */
 void rtc_clk_32k_enable(bool en);
+
+/**
+ * @brief Configure 32 kHz XTAL oscillator to accept external clock signal
+ */
+void rtc_clk_32k_enable_external(void);
 
 /**
  * @brief Get the state of 32k XTAL oscillator
@@ -415,63 +440,63 @@ void rtc_clk_fast_freq_set(rtc_fast_freq_t fast_freq);
 rtc_fast_freq_t rtc_clk_fast_freq_get(void);
 
 /**
- * @brief Switch CPU frequency
- *
- * If a PLL-derived frequency is requested (80, 160, 240 MHz), this function
- * will enable the PLL. Otherwise, PLL will be disabled.
- * Note: this function is not optimized for switching speed. It may take several
- * hundred microseconds to perform frequency switch.
- *
- * @param cpu_freq  new CPU frequency
+ * @brief Get CPU frequency config for a given frequency
+ * @param freq_mhz  Frequency in MHz
+ * @param[out] out_config Output, CPU frequency configuration structure
+ * @return true if frequency can be obtained, false otherwise
  */
-void rtc_clk_cpu_freq_set(rtc_cpu_freq_t cpu_freq);
+bool rtc_clk_cpu_freq_mhz_to_config(uint32_t freq_mhz, rtc_cpu_freq_config_t* out_config);
 
 /**
  * @brief Switch CPU frequency
  *
- * This is a faster version of rtc_clk_cpu_freq_set, which can handle some of
- * the frequency switch paths (XTAL -> PLL, PLL -> XTAL).
- * When switching from PLL to XTAL, PLL is not disabled (unlike rtc_clk_cpu_freq_set).
- * When switching back from XTAL to PLL, only the same PLL can be used.
- * Therefore it is not possible to switch 240 -> XTAL -> (80 or 160) using this
- * function.
+ * This function sets CPU frequency according to the given configuration
+ * structure. It enables PLLs, if necessary.
  *
- * For unsupported cases, this function falls back to rtc_clk_cpu_freq_set.
+ * @note This function in not intended to be called by applications in FreeRTOS
+ * environment. This is because it does not adjust various timers based on the
+ * new CPU frequency.
  *
- * Unlike rtc_clk_cpu_freq_set, this function relies on static data, so it is
- * less safe to use it e.g. from a panic handler (when memory might be corrupted).
- *
- * @param cpu_freq  new CPU frequency
+ * @param config  CPU frequency configuration structure
  */
-void rtc_clk_cpu_freq_set_fast(rtc_cpu_freq_t cpu_freq);
+void rtc_clk_cpu_freq_set_config(const rtc_cpu_freq_config_t* config);
 
 /**
- * @brief Get the currently selected CPU frequency
+ * @brief Switch CPU frequency (optimized for speed)
  *
- * Although CPU can be clocked by APLL and RTC 8M sources, such support is not
- * exposed through this library. As such, this function will not return
- * meaningful values when these clock sources are configured (e.g. using direct
- * access to clock selection registers). In debug builds, it will assert; in
- * release builds, it will return RTC_CPU_FREQ_XTAL.
+ * This function is a faster equivalent of rtc_clk_cpu_freq_set_config.
+ * It works faster because it does not disable PLLs when switching from PLL to
+ * XTAL and does not enabled them when switching back. If PLL is not already
+ * enabled when this function is called to switch from XTAL to PLL frequency,
+ * or the PLL which is enabled is the wrong one, this function will fall back
+ * to calling rtc_clk_cpu_freq_set_config.
  *
- * @return CPU frequency (one of rtc_cpu_freq_t values)
+ * Unlike rtc_clk_cpu_freq_set_config, this function relies on static data,
+ * so it is less safe to use it e.g. from a panic handler (when memory might
+ * be corrupted).
+ *
+ * @note This function in not intended to be called by applications in FreeRTOS
+ * environment. This is because it does not adjust various timers based on the
+ * new CPU frequency.
+ *
+ * @param config  CPU frequency configuration structure
  */
-rtc_cpu_freq_t rtc_clk_cpu_freq_get(void);
+void rtc_clk_cpu_freq_set_config_fast(const rtc_cpu_freq_config_t* config);
 
 /**
- * @brief Get corresponding frequency value for rtc_cpu_freq_t enum value
- * @param cpu_freq  CPU frequency, on of rtc_cpu_freq_t values
- * @return CPU frequency, in HZ
+ * @brief Get the currently used CPU frequency configuration
+ * @param[out] out_config  Output, CPU frequency configuration structure
  */
-uint32_t rtc_clk_cpu_freq_value(rtc_cpu_freq_t cpu_freq);
+void rtc_clk_cpu_freq_get_config(rtc_cpu_freq_config_t* out_config);
 
 /**
- * @brief Get rtc_cpu_freq_t enum value for given CPU frequency
- * @param cpu_freq_mhz  CPU frequency, one of 80, 160, 240, 2, and XTAL frequency
- * @param[out] out_val output, rtc_cpu_freq_t value corresponding to the frequency
- * @return true if the given frequency value matches one of enum values
+ * @brief Switch CPU clock source to XTAL
+ *
+ * Short form for filling in rtc_cpu_freq_config_t structure and calling
+ * rtc_clk_cpu_freq_set_config when a switch to XTAL is needed.
+ * Assumes that XTAL frequency has been determined — don't call in startup code.
  */
- bool rtc_clk_cpu_freq_from_mhz(int cpu_freq_mhz, rtc_cpu_freq_t* out_val);
+void rtc_clk_cpu_freq_set_xtal(void);
 
 /**
  * @brief Store new APB frequency value into RTC_APB_FREQ_REG
@@ -662,20 +687,12 @@ typedef struct {
 void rtc_sleep_init(rtc_sleep_config_t cfg);
 
 
-/**
- * @brief Set target value of RTC counter for RTC_TIMER_TRIG_EN wakeup source
- * @param t value of RTC counter at which wakeup from sleep will happen;
- *          only the lower 48 bits are used
- */
-void rtc_sleep_set_wakeup_time(uint64_t t);
-
-
 #define RTC_EXT0_TRIG_EN    BIT(0)  //!< EXT0 GPIO wakeup
 #define RTC_EXT1_TRIG_EN    BIT(1)  //!< EXT1 GPIO wakeup
 #define RTC_GPIO_TRIG_EN    BIT(2)  //!< GPIO wakeup (light sleep only)
 #define RTC_TIMER_TRIG_EN   BIT(3)  //!< Timer wakeup
 #define RTC_SDIO_TRIG_EN    BIT(4)  //!< SDIO wakeup (light sleep only)
-#define RTC_MAC_TRIG_EN     BIT(5)  //!< MAC wakeup (light sleep only)
+#define RTC_WIFI_TRIG_EN    BIT(5)  //!< WIFI wakeup (light sleep only)
 #define RTC_UART0_TRIG_EN   BIT(6)  //!< UART0 wakeup (light sleep only)
 #define RTC_UART1_TRIG_EN   BIT(7)  //!< UART1 wakeup (light sleep only)
 #define RTC_TOUCH_TRIG_EN   BIT(8)  //!< Touch wakeup
@@ -709,9 +726,35 @@ void rtc_sleep_set_wakeup_time(uint64_t t);
  *                      - RTC_CNTL_SDIO_REJECT_EN
  *                    These flags are used to prevent entering sleep when e.g.
  *                    an external host is communicating via SDIO slave
+ * @param lslp_mem_inf_fpu If non-zero then the low power config is restored
+ *                         immediately on wake. Recommended for light sleep,
+ *                         has no effect if the system goes into deep sleep.
  * @return non-zero if sleep was rejected by hardware
  */
 uint32_t rtc_sleep_start(uint32_t wakeup_opt, uint32_t reject_opt, uint32_t lslp_mem_inf_fpu);
+
+/**
+ * @brief Enter deep sleep mode
+ *
+ * Similar to rtc_sleep_start(), but additionally uses hardware to calculate the CRC value
+ * of RTC FAST memory. On wake, this CRC is used to determine if a deep sleep wake
+ * stub is valid to execute (if a wake address is set).
+ *
+ * No RAM is accessed while calculating the CRC and going into deep sleep, which makes
+ * this function safe to use even if the caller's stack is in RTC FAST memory.
+ *
+ * @note If no deep sleep wake stub address is set then calling rtc_sleep_start() will
+ * have the same effect and takes less time as CRC calculation is skipped.
+ *
+ * @note This function should only be called after rtc_sleep_init() has been called to
+ * configure the system for deep sleep.
+ *
+ * @param wakeup_opt - same as for rtc_sleep_start
+ * @param reject_opt - same as for rtc_sleep_start
+ *
+ * @return non-zero if sleep was rejected by hardware
+ */
+uint32_t rtc_deep_sleep_start(uint32_t wakeup_opt, uint32_t reject_opt);
 
 /**
  * RTC power and clock control initialization settings
@@ -726,6 +769,7 @@ typedef struct {
     uint32_t xtal_fpu : 1;
     uint32_t bbpll_fpu : 1;
     uint32_t cpu_waiti_clk_gate : 1;
+    uint32_t cali_ocode : 1;        //!< Calibrate Ocode to make bangap voltage more precise.
 } rtc_config_t;
 
 /**
@@ -743,7 +787,8 @@ typedef struct {
     .rtc_dboost_fpd = 1, \
     .xtal_fpu = 0, \
     .bbpll_fpu = 0, \
-    .cpu_waiti_clk_gate = 1\
+    .cpu_waiti_clk_gate = 1, \
+    .cali_ocode = 0\
 }
 
 /**
@@ -782,7 +827,7 @@ rtc_vddsdio_config_t rtc_vddsdio_get_config(void);
  */
 void rtc_vddsdio_set_config(rtc_vddsdio_config_t config);
 
+
 #ifdef __cplusplus
 }
 #endif
-

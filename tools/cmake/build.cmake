@@ -1,4 +1,3 @@
-
 # idf_build_get_property
 #
 # @brief Retrieve the value of the specified property related to ESP-IDF build.
@@ -126,8 +125,9 @@ endfunction()
 # properties used for the processing phase of the build.
 #
 function(__build_init idf_path)
-    # Create the build target, to which the ESP-IDF build properties, dependencies are attached to
-    add_library(__idf_build_target STATIC IMPORTED)
+    # Create the build target, to which the ESP-IDF build properties, dependencies are attached to.
+    # Must be global so as to be accessible from any subdirectory in custom projects.
+    add_library(__idf_build_target STATIC IMPORTED GLOBAL)
 
     set_default(python "python")
 
@@ -154,7 +154,8 @@ function(__build_init idf_path)
     # Set components required by all other components in the build
     #
     # - lwip is here so that #include <sys/socket.h> works without any special provisions
-    set(requires_common cxx newlib freertos heap log lwip soc esp_rom esp_common xtensa)
+    # - esp_hw_support is here for backward compatibility
+    set(requires_common cxx newlib freertos esp_hw_support heap log lwip soc hal esp_rom esp_common esp_system)
     idf_build_set_property(__COMPONENT_REQUIRES_COMMON "${requires_common}")
 
     __build_get_idf_git_revision()
@@ -314,7 +315,7 @@ endmacro()
 #
 macro(__build_set_default var default)
     set(_var __${var})
-    if(NOT "${_var}" STREQUAL "")
+    if(NOT "${${_var}}" STREQUAL "")
         idf_build_set_property(${var} "${${_var}}")
     else()
         idf_build_set_property(${var} "${default}")
@@ -474,8 +475,11 @@ function(idf_build_executable elf)
     # Set the EXECUTABLE_NAME and EXECUTABLE properties since there are generator expression
     # from components that depend on it
     get_filename_component(elf_name ${elf} NAME_WE)
+    get_target_property(elf_dir ${elf} BINARY_DIR)
+
     idf_build_set_property(EXECUTABLE_NAME ${elf_name})
     idf_build_set_property(EXECUTABLE ${elf})
+    idf_build_set_property(EXECUTABLE_DIR "${elf_dir}")
 
     # Add dependency of the build target to the executable
     add_dependencies(${elf} __idf_build_target)

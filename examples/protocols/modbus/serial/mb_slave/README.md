@@ -1,10 +1,13 @@
+| Supported Targets | ESP32 |
+| ----------------- | ----- |
+
 # Modbus Slave Example
 
-This example demonstrates using of FreeModbus stack port implementation for ESP32. The external Modbus host is able to read/write device parameters using Modbus protocol transport. The parameters accessible thorough Modbus are located in deviceparams.h/c files and can be updated by user. 
+This example demonstrates using of FreeModbus stack port implementation for ESP32. The external Modbus host is able to read/write device parameters using Modbus protocol transport. The parameters accessible thorough Modbus are located in `mb_example_common/modbus_params.h\c` files and can be updated by user. 
 These are represented in structures holding_reg_params, input_reg_params, coil_reg_params, discrete_reg_params for holding registers, input parameters, coils and discrete inputs accordingly. The app_main application demonstrates how to setup Modbus stack and use notifications about parameters change from host system. 
-The FreeModbus stack located in components\freemodbus\ folder and contain \port folder inside which contains FreeModbus stack port for ESP32. There are some parameters that can be configured in KConfig file to start stack correctly (See description below for more information).
+The FreeModbus stack located in `components/freemodbus` folder and contains the `/port` folder inside with FreeModbus stack port for ESP32. There are some parameters that can be configured in KConfig file to start stack correctly (See description below for more information).
 
-The slave example uses shared parameter structures defined in examples\protocols\modbus\serial\common_components folder.
+The slave example uses shared parameter structures defined in `examples/protocols/modbus/mb_example_common` folder.
 
 ## Hardware required :
 Option 1:
@@ -42,15 +45,17 @@ idf.py menuconfig
 Select Modbus Example Configuration menu item.
 Configure the UART pins used for modbus communication using command and table below.
 ```
-  -----------------------------------------------------------------------------------
-  | ESP32 Interface       | #define            | Default ESP32 Pin | External RS485 |
-  | ----------------------|--------------------|-------------------| Driver Pin     |
-  | Transmit Data (TxD)   | CONFIG_MB_UART_TXD | GPIO23            | DI             |
-  | Receive Data (RxD)    | CONFIG_MB_UART_RXD | GPIO22            | RO             |
-  | Request To Send (RTS) | CONFIG_MB_UART_RTS | GPIO18            | ~RE/DE         |
-  | Ground                | n/a                | GND               | GND            |
-  -----------------------------------------------------------------------------------
+  --------------------------------------------------------------------------------------------------------------------------
+  | ESP32 Interface       | #define            | Default ESP32 Pin     | Default ESP32-S2 Pins | External RS485 Driver Pin |
+  | ----------------------|--------------------|-----------------------|-----------------------|---------------------------|
+  | Transmit Data (TxD)   | CONFIG_MB_UART_TXD | GPIO23                | GPIO20                | DI                        |
+  | Receive Data (RxD)    | CONFIG_MB_UART_RXD | GPIO22                | GPIO19                | RO                        |
+  | Request To Send (RTS) | CONFIG_MB_UART_RTS | GPIO18                | GPIO18                | ~RE/DE                    |
+  | Ground                | n/a                | GND                   | GND                   | GND                       |
+  --------------------------------------------------------------------------------------------------------------------------
 ```
+Note: The GPIO22 - GPIO25 can not be used with ESP32-S2 chip because they are used for flash chip connection. Please refer to UART documentation for selected target.
+
 Define the ```Modbus communiction mode``` for slave in Kconfig - CONFIG_MB_COMM_MODE (must be the same for master and slave application).
 Set ```Modbus slave address``` for the example application (by default for example script is set to 1).
 The communication parameters of freemodbus stack (Component config->Modbus configuration) allow to configure it appropriately but usually it is enough to use default settings.

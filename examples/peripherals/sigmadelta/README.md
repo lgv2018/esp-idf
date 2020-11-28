@@ -27,9 +27,6 @@ By default the GPIO output is 4. To change it, edit the line with `GPIO_NUM_4` i
 idf.py menuconfig
 ```
 
-Set serial port under Serial Flasher Options and save the configuration.
-
-
 ### Build and Flash
 
 Build the project and flash it to the board, then run monitor tool to view serial output:
@@ -61,11 +58,11 @@ Immediately after that the LED should start brightening and dimming.
 If you are using [ESP-WROVER-KIT](https://www.espressif.com/en/products/hardware/esp-wrover-kit/overview) then this board has an RGB LED already installed. GPIO4 is driving blue color of the LED. The brightening and dimming effect of the blue LED may not be distinctly visible because red and green LEDs are not actively driven by this example and will slightly lit. To resolve this issue you can switch both diodes off by adding the following code at the end of `sigmadelta_example_init()` function:
 
 ```c
-gpio_pad_select_gpio(GPIO_NUM_0);
+esp_rom_gpio_pad_select_gpio(GPIO_NUM_0);
 gpio_set_direction(GPIO_NUM_0, GPIO_MODE_OUTPUT);
 gpio_set_level(GPIO_NUM_0, 0);
 
-gpio_pad_select_gpio(GPIO_NUM_2);
+esp_rom_gpio_pad_select_gpio(GPIO_NUM_2);
 gpio_set_direction(GPIO_NUM_2, GPIO_MODE_OUTPUT);
 gpio_set_level(GPIO_NUM_2, 0);
 ```

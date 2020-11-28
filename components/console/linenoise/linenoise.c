@@ -129,6 +129,7 @@ static int dumbmode = 0; /* Dumb mode where line editing is disabled. Off by def
 static int history_max_len = LINENOISE_DEFAULT_HISTORY_MAX_LEN;
 static int history_len = 0;
 static char **history = NULL;
+static bool allow_empty = true;
 
 /* The linenoiseState structure represents the state during line editing.
  * We pass this state to functions implementing specific editing
@@ -202,6 +203,13 @@ void linenoiseSetDumbMode(int set) {
     dumbmode = set;
 }
 
+static void flushWrite(void) {
+    if (__fbufsize(stdout) > 0) {
+        fflush(stdout);
+    }
+    fsync(fileno(stdout));
+}
+
 /* Use the ESC [6n escape sequence to query the horizontal cursor position
  * and return it. On error -1 is returned, on success the position of the
  * cursor. */
@@ -212,7 +220,7 @@ static int getCursorPosition(void) {
 
     /* Report cursor location */
     fprintf(stdout, "\x1b[6n");
-
+    flushWrite();
     /* Read the response: ESC [ rows ; cols R */
     while (i < sizeof(buf)-1) {
         if (fread(buf+i, 1, 1, stdin) != 1) break;
@@ -237,6 +245,7 @@ static int getColumns(void) {
 
     /* Go to right margin and get position. */
     if (fwrite("\x1b[999C", 1, 6, stdout) != 6) goto failed;
+    flushWrite();
     cols = getCursorPosition();
     if (cols == -1) goto failed;
 
@@ -247,6 +256,7 @@ static int getColumns(void) {
         if (fwrite(seq, 1, strlen(seq), stdout) == -1) {
             /* Can't recover... */
         }
+        flushWrite();
     }
     return cols;
 
@@ -257,12 +267,14 @@ failed:
 /* Clear the screen. Used to handle ctrl+l */
 void linenoiseClearScreen(void) {
     fprintf(stdout,"\x1b[H\x1b[2J");
+    flushWrite();
 }
 
 /* Beep, used for completion when there is nothing to complete or when all
  * the choices were already shown. */
 static void linenoiseBeep(void) {
     fprintf(stdout, "\x7");
+    flushWrite();
 }
 
 /* ============================== Completion ================================ */
@@ -467,6 +479,7 @@ static void refreshSingleLine(struct linenoiseState *l) {
     snprintf(seq,64,"\r\x1b[%dC", (int)(pos+plen));
     abAppend(&ab,seq,strlen(seq));
     if (fwrite(ab.b, ab.len, 1, stdout) == -1) {} /* Can't recover from write error. */
+    flushWrite();
     abFree(&ab);
 }
 
@@ -554,6 +567,7 @@ static void refreshMultiLine(struct linenoiseState *l) {
     l->oldpos = l->pos;
 
     if (fwrite(ab.b,ab.len,1,stdout) == -1) {} /* Can't recover from write error. */
+    flushWrite();
     abFree(&ab);
 }
 
@@ -580,6 +594,7 @@ int linenoiseEditInsert(struct linenoiseState *l, char c) {
                 /* Avoid a full update of the line in the
                  * trivial case. */
                 if (fwrite(&c,1,1,stdout) == -1) return -1;
+                flushWrite();
             } else {
                 refreshLine(l);
             }
@@ -725,6 +740,7 @@ static int linenoiseEdit(char *buf, size_t buflen, const char *prompt)
 
     int pos1 = getCursorPosition();
     if (fwrite(prompt,l.plen,1,stdout) == -1) return -1;
+    flushWrite();
     int pos2 = getCursorPosition();
     if (pos1 >= 0 && pos2 >= 0) {
         l.plen = pos2 - pos1;
@@ -880,23 +896,27 @@ static int linenoiseEdit(char *buf, size_t buflen, const char *prompt)
             linenoiseEditDeletePrevWord(&l);
             break;
         }
-        if (__fbufsize(stdout) > 0) {
-            fflush(stdout);
-        }
+        flushWrite();
     }
     return l.len;
 }
 
+void linenoiseAllowEmpty(bool val) {
+    allow_empty = val;
+}
+
 int linenoiseProbe(void) {
     /* Switch to non-blocking mode */
-    int flags = fcntl(STDIN_FILENO, F_GETFL);
+    int stdin_fileno = fileno(stdin);
+    int flags = fcntl(stdin_fileno, F_GETFL);
     flags |= O_NONBLOCK;
-    int res = fcntl(STDIN_FILENO, F_SETFL, flags);
+    int res = fcntl(stdin_fileno, F_SETFL, flags);
     if (res != 0) {
         return -1;
     }
     /* Device status request */
     fprintf(stdout, "\x1b[5n");
+    flushWrite();
 
     /* Try to read response */
     int timeout_ms = 200;
@@ -910,7 +930,7 @@ int linenoiseProbe(void) {
     }
     /* Restore old mode */
     flags &= ~O_NONBLOCK;
-    res = fcntl(STDIN_FILENO, F_SETFL, flags);
+    res = fcntl(stdin_fileno, F_SETFL, flags);
     if (res != 0) {
         return -1;
     }
@@ -930,6 +950,7 @@ static int linenoiseRaw(char *buf, size_t buflen, const char *prompt) {
 
     count = linenoiseEdit(buf, buflen, prompt);
     fputc('\n', stdout);
+    flushWrite();
     return count;
 }
 
@@ -956,6 +977,7 @@ static int linenoiseDumb(char* buf, size_t buflen, const char* prompt) {
         fputc(c, stdout); /* echo */
     }
     fputc('\n', stdout);
+    flushWrite();
     return count;
 }
 
@@ -974,6 +996,9 @@ static void sanitize(char* src) {
 char *linenoise(const char *prompt) {
     char *buf = calloc(1, LINENOISE_MAX_LINE);
     int count = 0;
+    if (buf == NULL) {
+        return NULL;
+    }
     if (!dumbmode) {
         count = linenoiseRaw(buf, LINENOISE_MAX_LINE, prompt);
     } else {
@@ -982,8 +1007,9 @@ char *linenoise(const char *prompt) {
     if (count > 0) {
         sanitize(buf);
         count = strlen(buf);
-    }
-    if (count <= 0) {
+    } else if (count == 0 && allow_empty) {
+        /* will return an empty (0-length) string */
+    } else {
         free(buf);
         return NULL;
     }
@@ -1099,9 +1125,15 @@ int linenoiseHistorySave(const char *filename) {
  * on error -1 is returned. */
 int linenoiseHistoryLoad(const char *filename) {
     FILE *fp = fopen(filename,"r");
-    char buf[LINENOISE_MAX_LINE];
+    if (fp == NULL) {
+        return -1;
+    }
 
-    if (fp == NULL) return -1;
+    char *buf = calloc(1, LINENOISE_MAX_LINE);
+    if (buf == NULL) {
+        fclose(fp);
+        return -1;
+    }
 
     while (fgets(buf,LINENOISE_MAX_LINE,fp) != NULL) {
         char *p;
@@ -1111,6 +1143,9 @@ int linenoiseHistoryLoad(const char *filename) {
         if (p) *p = '\0';
         linenoiseHistoryAdd(buf);
     }
+
+    free(buf);
     fclose(fp);
+
     return 0;
 }

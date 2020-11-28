@@ -19,6 +19,7 @@
 #
 
 from __future__ import division, print_function
+from future.moves.itertools import zip_longest
 from builtins import int, range, bytes
 from io import open
 import sys
@@ -28,7 +29,6 @@ import random
 import struct
 import os
 import array
-import csv
 import zlib
 import codecs
 import datetime
@@ -75,6 +75,8 @@ class Page(object):
     I16  = 0x12
     U32  = 0x04
     I32  = 0x14
+    U64  = 0x08
+    I64  = 0x18
     SZ   = 0x21
     BLOB = 0x41
     BLOB_DATA = 0x42
@@ -358,10 +360,12 @@ class Page(object):
 
         if datalen > Page.PAGE_PARAMS["max_old_blob_size"]:
             if self.version == Page.VERSION1:
-                raise InputError(" Input File: Size exceeds max allowed length `%s` bytes for key `%s`." % (Page.PAGE_PARAMS["max_old_blob_size"], key))
+                raise InputError(" Input File: Size (%d) exceeds max allowed length `%s` bytes for key `%s`."
+                                 % (datalen, Page.PAGE_PARAMS["max_old_blob_size"], key))
             else:
                 if encoding == "string":
-                    raise InputError(" Input File: Size exceeds max allowed length `%s` bytes for key `%s`." % (Page.PAGE_PARAMS["max_old_blob_size"], key))
+                    raise InputError(" Input File: Size (%d) exceeds max allowed length `%s` bytes for key `%s`."
+                                     % (datalen, Page.PAGE_PARAMS["max_old_blob_size"], key))
 
         # Calculate no. of entries data will require
         rounded_size = (datalen + 31) & ~31
@@ -432,12 +436,21 @@ class Page(object):
         elif encoding == "u16":
             entry_struct[1] = Page.U16
             struct.pack_into('<H', entry_struct, 24, data)
+        elif encoding == "i16":
+            entry_struct[1] = Page.I16
+            struct.pack_into('<h', entry_struct, 24, data)
         elif encoding == "u32":
             entry_struct[1] = Page.U32
             struct.pack_into('<I', entry_struct, 24, data)
         elif encoding == "i32":
             entry_struct[1] = Page.I32
             struct.pack_into('<i', entry_struct, 24, data)
+        elif encoding == "u64":
+            entry_struct[1] = Page.U64
+            struct.pack_into('<Q', entry_struct, 24, data)
+        elif encoding == "i64":
+            entry_struct[1] = Page.I64
+            struct.pack_into('<q', entry_struct, 24, data)
 
         # Compute CRC
         crc_data = bytearray(b'28')
@@ -533,6 +546,7 @@ class NVS(object):
     """
     def write_entry(self, key, value, encoding):
         if encoding == "hex2bin":
+            value = value.strip()
             if len(value) % 2 != 0:
                 raise InputError("%s: Invalid data length. Should be multiple of 2." % key)
             value = binascii.a2b_hex(value)
@@ -547,7 +561,7 @@ class NVS(object):
 
         encoding = encoding.lower()
         varlen_encodings = ["string", "binary", "hex2bin", "base64"]
-        primitive_encodings = ["u8", "i8", "u16", "u32", "i32"]
+        primitive_encodings = ["u8", "i8", "u16", "i16", "u32", "i32", "u64", "i64"]
 
         if encoding in varlen_encodings:
             try:
@@ -615,7 +629,7 @@ def write_entry(nvs_instance, key, datatype, encoding, value):
     :param nvs_instance: Instance of an NVS class returned by nvs_open()
     :param key: Key of the data
     :param datatype: Data type. Valid values are "file", "data" and "namespace"
-    :param encoding: Data encoding. Valid values are "u8", "i8", "u16", "u32", "i32", "string", "binary", "hex2bin" and "base64"
+    :param encoding: Data encoding. Valid values are "u8", "i8", "u16", "i16", "u32", "i32", "u64", "i64", "string", "binary", "hex2bin" and "base64"
     :param value: Data value in ascii encoded string format for "data" datatype and filepath for "file" datatype
     :return: None
     """
@@ -786,7 +800,7 @@ def decrypt(args):
     page_num = 0
     page_max_size = 4096
     start_entry_offset = 0
-    empty_data_entry = bytearray('\xff') * 32
+    empty_data_entry = bytearray(b'\xff') * nvs_read_bytes
 
     # Check if key file has .bin extension
     input_files = [args.input, args.key, args.output]
@@ -894,19 +908,40 @@ def generate(args, is_encr_enabled=False, encr_key=None):
     with open(args.input, 'rt', encoding='utf8') as input_file,\
             open(args.output, 'wb') as output_file,\
             nvs_open(output_file, input_size, args.version, is_encrypt=is_encr_enabled, key=encr_key) as nvs_obj:
-        # Comments are skipped
-        reader = csv.DictReader(filter(lambda row: row[0] != '#',input_file), delimiter=',')
+
         if nvs_obj.version == Page.VERSION1:
             version_set = VERSION1_PRINT
         else:
             version_set = VERSION2_PRINT
+
         print("\nCreating NVS binary with version:", version_set)
-        for row in reader:
+
+        line = input_file.readline().strip()
+
+        # Comments are skipped
+        while line.startswith('#'):
+            line = input_file.readline().strip()
+        if not isinstance(line, str):
+            line = line.encode('utf-8')
+
+        header = line.split(',')
+
+        while True:
+            line = input_file.readline().strip()
+            if not isinstance(line, str):
+                line = line.encode('utf-8')
+
+            value = line.split(',')
+            if len(value) == 1 and '' in value:
+                break
+
+            data = dict(zip_longest(header, value))
+
             try:
                 # Check key length
-                if len(row["key"]) > 15:
-                    raise InputError("Length of key `%s` should be <= 15 characters." % row["key"])
-                write_entry(nvs_obj, row["key"], row["type"], row["encoding"], row["value"])
+                if len(data["key"]) > 15:
+                    raise InputError("Length of key `{}` should be <= 15 characters.".format(data["key"]))
+                write_entry(nvs_obj, data["key"], data["type"], data["encoding"], data["value"])
             except InputError as e:
                 print(e)
                 filedir, filename = os.path.split(args.output)

@@ -31,7 +31,7 @@
 #include "bta/bta_sys.h"
 #include "bta/bta_gatt_api.h"
 #include "bta_gattc_int.h"
-
+#include "stack/l2c_api.h"
 /*****************************************************************************
 **  Constants
 *****************************************************************************/
@@ -298,7 +298,7 @@ void BTA_GATTC_ServiceSearchRequest (UINT16 conn_id, tBT_UUID *p_srvc_uuid)
 ** Returns          returns list_t of tBTA_GATTC_SERVICE or NULL.
 **
 *******************************************************************************/
-const list_t* BTA_GATTC_GetServices(UINT16 conn_id) 
+const list_t* BTA_GATTC_GetServices(UINT16 conn_id)
 {
     return bta_gattc_get_services(conn_id);
 }
@@ -315,7 +315,7 @@ const list_t* BTA_GATTC_GetServices(UINT16 conn_id)
 ** Returns          returns pointer to tBTA_GATTC_CHARACTERISTIC or NULL.
 **
 *******************************************************************************/
-const tBTA_GATTC_CHARACTERISTIC* BTA_GATTC_GetCharacteristic(UINT16 conn_id, UINT16 handle) 
+const tBTA_GATTC_CHARACTERISTIC* BTA_GATTC_GetCharacteristic(UINT16 conn_id, UINT16 handle)
 {
     return bta_gattc_get_characteristic(conn_id, handle);
 }
@@ -602,7 +602,10 @@ void BTA_GATTC_WriteCharValue ( UINT16 conn_id,
             p_buf->p_value = (UINT8 *)(p_buf + 1);
             memcpy(p_buf->p_value, p_value, len);
         }
-
+        if(write_type == BTA_GATTC_TYPE_WRITE_NO_RSP){
+            l2ble_update_att_acl_pkt_num(L2CA_DECREASE_BTC_NUM, NULL);
+            l2ble_update_att_acl_pkt_num(L2CA_ADD_BTU_NUM, NULL);
+        }
         bta_sys_sendmsg(p_buf);
     }
     return;
@@ -649,7 +652,10 @@ void BTA_GATTC_WriteCharDescr (UINT16 conn_id,
             /* pack the descr data */
             memcpy(p_buf->p_value, p_data->p_value, p_data->len);
         }
-
+        if(write_type == BTA_GATTC_TYPE_WRITE_NO_RSP){
+            l2ble_update_att_acl_pkt_num(L2CA_DECREASE_BTC_NUM, NULL);
+            l2ble_update_att_acl_pkt_num(L2CA_ADD_BTU_NUM, NULL);
+        }
         bta_sys_sendmsg(p_buf);
     }
     return;
@@ -957,7 +963,7 @@ void BTA_GATTC_CacheAssoc(tBTA_GATTC_IF client_if, BD_ADDR src_addr, BD_ADDR ass
         memcpy(p_buf->assoc_addr, assoc_addr, sizeof(BD_ADDR));
 
         bta_sys_sendmsg(p_buf);
-        
+
     }
     return;
 }
@@ -1064,4 +1070,3 @@ void BTA_GATTC_Broadcast(tBTA_GATTC_IF client_if, BOOLEAN start)
 }
 
 #endif /* defined(GATTC_INCLUDED) && (GATTC_INCLUDED == TRUE) */
-

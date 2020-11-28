@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 #
 # Test the build system for basic consistency
 #
@@ -69,9 +69,9 @@ function run_tests()
     print_status "Updating component source file rebuilds component"
     # touch a file & do a build
     take_build_snapshot
-    touch ${IDF_PATH}/components/esp32/cpu_start.c
+    touch ${IDF_PATH}/components/esp_system/port/cpu_start.c
     make || failure "Failed to partial build"
-    assert_rebuilt ${APP_BINS} esp32/libesp32.a esp32/cpu_start.o
+    assert_rebuilt ${APP_BINS} esp_system/libesp_system.a esp_system/port/cpu_start.o
     assert_not_rebuilt lwip/liblwip.a freertos/libfreertos.a ${BOOTLOADER_BINS} partitions_singleapp.bin
 
     print_status "Bootloader source file rebuilds bootloader"
@@ -183,7 +183,7 @@ function run_tests()
     # and therefore should rebuild
     assert_rebuilt newlib/syscall_table.o
     assert_rebuilt nvs_flash/src/nvs_api.o
-    assert_rebuilt freertos/xtensa_vectors.o
+    assert_rebuilt freertos/port/xtensa/xtensa_vectors.o
 
     print_status "Updating project Makefile triggers full recompile"
     make
@@ -193,7 +193,7 @@ function run_tests()
     # similar to previous test
     assert_rebuilt newlib/syscall_table.o
     assert_rebuilt nvs_flash/src/nvs_api.o
-    assert_rebuilt freertos/xtensa_vectors.o
+    assert_rebuilt freertos/port/xtensa/xtensa_vectors.o
 
     print_status "print_flash_cmd target should produce one line of output"
     make
@@ -251,12 +251,12 @@ function run_tests()
 	echo "project-version-2.0(012345678901234567890123456789)" > ${TESTDIR}/template/version.txt
 	make
     assert_rebuilt ${APP_BINS}
-    assert_not_rebuilt ${BOOTLOADER_BINS} esp32/libesp32.a
+    assert_not_rebuilt ${BOOTLOADER_BINS} esp_system/libesp_system.a
 
     print_status "Re-building does not change app.bin"
     take_build_snapshot
     make
-    assert_not_rebuilt ${APP_BINS} ${BOOTLOADER_BINS} esp32/libesp32.a
+    assert_not_rebuilt ${APP_BINS} ${BOOTLOADER_BINS} esp_system/libesp_system.a
     rm -f ${TESTDIR}/template/version.txt
 
     print_status "Get the version of app from git describe. Project is not inside IDF and do not have a tag only a hash commit."

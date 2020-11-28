@@ -39,6 +39,3 @@ esp32_out.ld: $(COMPONENT_PATH)/ld/esp32.ld ../include/sdkconfig.h
 	$(CC) -I ../include -C -P -x c -E $< -o $@
 
 COMPONENT_EXTRA_CLEAN := esp32_out.ld $(COMPONENT_BUILD_DIR)/esp32.project.ld
-
-# disable stack protection in files which are involved in initialization of that feature
-cpu_start.o: CFLAGS := $(filter-out -fstack-protector%, $(CFLAGS))
